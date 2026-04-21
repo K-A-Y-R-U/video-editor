@@ -17,6 +17,51 @@ let isPlayingQueue = false
 // Drag state
 let drag = null
 
+
+// ── Undo / Redo ───────────────────────────────────────────────────────────────
+const undoStack = []
+const redoStack = []
+const MAX_HISTORY = 50
+
+function saveState(description = '') {
+  const snapshot = JSON.stringify(clips)
+  // Don't save if identical to last state
+  if (undoStack.length > 0 && undoStack[undoStack.length - 1].state === snapshot) return
+  undoStack.push({ state: snapshot, description })
+  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  redoStack.length = 0  // clear redo on new action
+  updateUndoButtons()
+}
+
+function undo() {
+  if (undoStack.length === 0) return
+  const current = JSON.stringify(clips)
+  redoStack.push({ state: current, description: '' })
+  const entry = undoStack.pop()
+  clips = JSON.parse(entry.state)
+  renderTimeline()
+  updateUndoButtons()
+  setStatus('Deshacer: ' + (entry.description || 'acción'))
+}
+
+function redo() {
+  if (redoStack.length === 0) return
+  const current = JSON.stringify(clips)
+  undoStack.push({ state: current, description: '' })
+  const entry = redoStack.pop()
+  clips = JSON.parse(entry.state)
+  renderTimeline()
+  updateUndoButtons()
+  setStatus('Rehacer: ' + (entry.description || 'acción'))
+}
+
+function updateUndoButtons() {
+  const undoBtn = document.getElementById('btn-undo')
+  const redoBtn = document.getElementById('btn-redo')
+  if (undoBtn) undoBtn.disabled = undoStack.length === 0
+  if (redoBtn) redoBtn.disabled = redoStack.length === 0
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(s) {
   if (!isFinite(s) || s < 0) return '0:00'
@@ -79,28 +124,55 @@ async function importFiles() {
 
 function renderMediaPanel() {
   const list = document.getElementById('media-list')
+  const countEl = document.getElementById('media-count')
   list.innerHTML = ''
+
+  if (countEl) countEl.textContent = mediaItems.length
+
   if (!mediaItems.length) {
     const hint = document.createElement('div')
     hint.className = 'empty-hint'
-    hint.innerHTML = 'Importa archivos con<br>el botón de arriba.<br>Doble clic para agregar<br>al timeline.'
+    hint.innerHTML = '<div class="empty-icon">🎬</div>Importa archivos con<br>el botón de arriba.<br>Doble clic para agregar<br>al timeline.'
     list.appendChild(hint)
     return
   }
+
   mediaItems.forEach((m, i) => {
     const item = document.createElement('div')
     item.className = 'media-item' + (i === selectedMediaIndex ? ' active' : '')
+
+    const thumb = document.createElement('div')
+    thumb.className = 'media-thumb'
+    thumb.textContent = m.isImage ? '🖼️' : '🎬'
+
+    const info = document.createElement('div')
+    info.className = 'media-info'
+
     const nameDiv = document.createElement('div')
-    nameDiv.className = 'name'
+    nameDiv.className = 'media-name'
     nameDiv.title = m.name
-    nameDiv.textContent = (m.isImage ? '🖼️ ' : '🎬 ') + m.name
+    nameDiv.textContent = m.name
+
     const durDiv = document.createElement('div')
-    durDiv.className = 'dur'
+    durDiv.className = 'media-dur'
     durDiv.textContent = m.isImage ? 'imagen' : fmt(m.duration)
-    item.appendChild(nameDiv)
-    item.appendChild(durDiv)
+
+    info.appendChild(nameDiv)
+    info.appendChild(durDiv)
+
+    const addBtn = document.createElement('button')
+    addBtn.className = 'media-add-btn'
+    addBtn.textContent = '+'
+    addBtn.title = 'Agregar al timeline'
+    addBtn.addEventListener('click', e => { e.stopPropagation(); selectMedia(i); addToTimeline() })
+
+    item.appendChild(thumb)
+    item.appendChild(info)
+    item.appendChild(addBtn)
+
     item.addEventListener('click', () => selectMedia(i))
     item.addEventListener('dblclick', () => { selectMedia(i); addToTimeline() })
+
     list.appendChild(item)
   })
 }
@@ -183,6 +255,7 @@ function setupTrimSliders(dur) {
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 function addToTimeline() {
+  saveState('agregar clip')
   if (selectedMediaIndex < 0) { setStatus('Selecciona un clip primero'); return }
   const m = mediaItems[selectedMediaIndex]
   const id = Date.now()
@@ -275,6 +348,7 @@ function renderTimeline() {
 // ── Drag ──────────────────────────────────────────────────────────────────────
 function clipMouseDown(e, id, type) {
   e.stopPropagation(); e.preventDefault()
+  saveState('mover clip')
   selectClip(id)
   const c = clips.find(x => x.id === id)
   if (!c) return
@@ -331,6 +405,7 @@ function selectClip(id) {
 }
 
 function splitClip() {
+  saveState('dividir clip')
   if (!selectedClip) { setStatus('Selecciona un clip en el timeline'); return }
   const idx = clips.findIndex(c => c.id === selectedClip)
   if (idx < 0) return
@@ -351,6 +426,7 @@ function splitClip() {
 }
 
 function deleteClip() {
+  saveState('eliminar clip')
   if (!selectedClip) { setStatus('Selecciona un clip'); return }
   clips = clips.filter(c => c.id !== selectedClip)
   selectedClip = null
@@ -615,6 +691,31 @@ async function startExport() {
 renderTimeline()
 // ── Event Listeners (CSP-safe, no inline handlers) ───────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+
+  // Undo / Redo keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    const ctrl = e.ctrlKey || e.metaKey
+    if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+    if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
+  })
+
+  // Undo / Redo buttons
+  const btnUndo = document.getElementById('btn-undo')
+  const btnRedo = document.getElementById('btn-redo')
+  if (btnUndo) btnUndo.addEventListener('click', undo)
+  if (btnRedo) btnRedo.addEventListener('click', redo)
+  updateUndoButtons()
+
+  // Props panel tab switching
+  document.querySelectorAll('.props-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.props-tab').forEach(t => t.classList.remove('active'))
+      document.querySelectorAll('.props-body').forEach(b => b.style.display = 'none')
+      tab.classList.add('active')
+      document.getElementById('tab-' + tab.dataset.tab).style.display = 'block'
+    })
+  })
+
   // Topbar
   document.getElementById('btn-import').addEventListener('click', importFiles)
   document.getElementById('btn-add-timeline').addEventListener('click', addToTimeline)
