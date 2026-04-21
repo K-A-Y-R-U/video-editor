@@ -557,8 +557,9 @@ body {
 .tl-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
 .tl-tick-label { position: absolute; top: 3px; font-size: 9px; color: var(--text-3); transform: translateX(-50%); font-family: 'Cascadia Code', 'Consolas', monospace; }
 
-#tl-video-track { height: 36px; border-bottom: 1px solid var(--border); position: relative; background: var(--bg-base); }
-#tl-audio-track { height: 36px; position: relative; background: #0a0d0a; }
+#tl-video-track, #tl-video-track-2 { height: 36px; border-bottom: 1px solid var(--border); position: relative; background: var(--bg-base); }
+#tl-audio-track, #tl-audio-track-2 { height: 36px; border-bottom: 1px solid var(--border); position: relative; background: #0a0d0a; }
+#tl-audio-track-2 { border-bottom: none; }
 
 .tl-clip {
   position: absolute;
@@ -666,6 +667,15 @@ body {
 }
 #export-pct { font-size: 13px; color: var(--text-2); font-family: 'Cascadia Code', 'Consolas', monospace; }
 
+
+.tl-clip.dragging { opacity: 0.6; cursor: grabbing !important; z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.track-hover { background: rgba(91,110,248,0.08) !important; outline: 1px dashed var(--accent); }
+#tl-video-track, #tl-video-track-2, #tl-audio-track, #tl-audio-track-2 { transition: background 0.1s; }
+.tl-clip { transition: opacity 0.1s, box-shadow 0.1s; }
+.track-empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; color: var(--text-3); pointer-events: none; white-space: nowrap; opacity: 0; transition: opacity 0.2s; }
+#tl-video-track:empty .track-empty-hint, #tl-video-track-2:empty .track-empty-hint,
+#tl-audio-track:empty .track-empty-hint, #tl-audio-track-2:empty .track-empty-hint { opacity: 1; }
+
 /* ── SCROLLBARS GLOBAL ───────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -763,6 +773,11 @@ body {
     <button class="props-tab" data-tab="speed">Velocidad</button>
     <button class="props-tab" data-tab="color">Color</button>
     <button class="props-tab" data-tab="filters">Filtros</button>
+  </div>
+
+  <div id="clip-indicator" style="padding:6px 12px;background:var(--bg-2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-3);display:none;align-items:center;gap:6px">
+    <span style="color:var(--accent)">●</span>
+    <span id="clip-indicator-name">Sin clip seleccionado</span>
   </div>
 
   <!-- TAB: Video -->
@@ -870,6 +885,13 @@ body {
       </div>
     </div>
   </div>
+
+  <!-- Apply to all -->
+  <div style="padding:10px 12px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0">
+    <button class="tbtn" id="btn-apply-all" style="width:100%;justify-content:center;gap:6px">
+      <span>⚡</span> Aplicar a todos los clips
+    </button>
+  </div>
 </div>
 
 <!-- TIMELINE -->
@@ -886,14 +908,18 @@ body {
   <div id="tl-body">
     <div id="tl-labels">
       <div class="ruler-label"></div>
-      <div class="track-label">Video</div>
-      <div class="track-label">Audio</div>
+      <div class="track-label">Video 1</div>
+      <div class="track-label">Video 2</div>
+      <div class="track-label">Audio 1</div>
+      <div class="track-label">Audio 2</div>
     </div>
     <div id="tl-scroll">
       <div id="tl-inner">
         <div id="tl-ruler"></div>
-        <div id="tl-video-track"></div>
-        <div id="tl-audio-track"></div>
+        <div id="tl-video-track" data-track="0"></div>
+        <div id="tl-video-track-2" data-track="1"></div>
+        <div id="tl-audio-track" data-track="0"></div>
+        <div id="tl-audio-track-2" data-track="1"></div>
         <div id="tl-playhead"></div>
       </div>
     </div>

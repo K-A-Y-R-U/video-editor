@@ -31,6 +31,7 @@ function saveState(description = '') {
   if (undoStack.length > MAX_HISTORY) undoStack.shift()
   redoStack.length = 0  // clear redo on new action
   updateUndoButtons()
+  document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
 }
 
 function undo() {
@@ -41,6 +42,7 @@ function undo() {
   clips = JSON.parse(entry.state)
   renderTimeline()
   updateUndoButtons()
+  document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
   setStatus('Deshacer: ' + (entry.description || 'acción'))
 }
 
@@ -52,6 +54,7 @@ function redo() {
   clips = JSON.parse(entry.state)
   renderTimeline()
   updateUndoButtons()
+  document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
   setStatus('Rehacer: ' + (entry.description || 'acción'))
 }
 
@@ -60,6 +63,23 @@ function updateUndoButtons() {
   const redoBtn = document.getElementById('btn-redo')
   if (undoBtn) undoBtn.disabled = undoStack.length === 0
   if (redoBtn) redoBtn.disabled = redoStack.length === 0
+}
+
+
+// ── Propiedades por clip ──────────────────────────────────────────────────────
+function defaultClipProps() {
+  return {
+    trimStart: 0, trimEnd: 0,
+    speed: 100,
+    brightness: 0, contrast: 0, saturation: 0,
+    rotation: 0, zoom: 100,
+    flipH: false, flipV: false,
+    filter: ''
+  }
+}
+
+function getSelectedClip() {
+  return clips.find(c => c.id === selectedClip) || null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -259,12 +279,72 @@ function addToTimeline() {
   if (selectedMediaIndex < 0) { setStatus('Selecciona un clip primero'); return }
   const m = mediaItems[selectedMediaIndex]
   const id = Date.now()
+
+  // tlStart = end of the last clip in the timeline
   const tlStart = clips.reduce((acc, c) => Math.max(acc, c.tlStart + c.tlDuration), 0)
-  const start = trimStart || 0
-  const dur = (trimEnd - trimStart) > 0 ? (trimEnd - trimStart) : m.duration
-  clips.push({ id, path: m.path, name: m.name, start, duration: m.duration, tlStart, tlDuration: dur, isImage: m.isImage || false })
+
+  // For images use fixed 5s duration; for video use full duration ignoring stale trimStart/trimEnd
+  const isImg = m.isImage || false
+  const clipDuration = isImg ? 5 : (m.duration || 10)
+  const clipStart = 0  // always start from beginning of the source file
+
+  const props = defaultClipProps()
+  props.trimStart = 0
+  props.trimEnd   = clipDuration
+
+  clips.push({
+    id,
+    path: m.path,
+    name: m.name,
+    start: clipStart,
+    duration: isImg ? 5 : (m.duration || 10),
+    tlStart,
+    tlDuration: clipDuration,
+    isImage: isImg,
+    track: 0,
+    audioTrack: 0,
+    props
+  })
   renderTimeline()
   setStatus(`Clip agregado: ${m.name}`)
+}
+
+// ── Clip element builders ─────────────────────────────────────────────────────
+function makeVideoClipEl(c) {
+  const left  = c.tlStart * tlZoom
+  const width = Math.max(c.tlDuration * tlZoom, 20)
+  const sel   = selectedClip === c.id ? 'selected' : ''
+  const icon  = c.isImage ? '🖼' : '🎬'
+  const div = document.createElement('div')
+  div.className = `tl-clip video ${sel}`
+  div.style.cssText = `left:${left}px;width:${width}px`
+  div.dataset.id = c.id
+  const lh = document.createElement('div')
+  lh.className = 'tl-resize-handle left'
+  lh.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'resize-left'))
+  const label = document.createElement('span')
+  label.className = 'tl-clip-label'
+  label.textContent = icon + ' ' + c.name
+  const rh = document.createElement('div')
+  rh.className = 'tl-resize-handle right'
+  rh.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'resize-right'))
+  div.appendChild(lh); div.appendChild(label); div.appendChild(rh)
+  div.addEventListener('mousedown', e => {
+    if (!e.target.classList.contains('tl-resize-handle')) clipMouseDown(e, c.id, 'move')
+  })
+  return div
+}
+
+function makeAudioClipEl(c) {
+  const left  = c.tlStart * tlZoom
+  const width = Math.max(c.tlDuration * tlZoom, 20)
+  const sel   = selectedClip === c.id ? 'selected' : ''
+  const div = document.createElement('div')
+  div.className = `tl-clip audio ${sel}`
+  div.style.cssText = `left:${left}px;width:${width}px`
+  div.dataset.id = c.id
+  div.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'move'))
+  return div
 }
 
 function renderTimeline() {
@@ -290,54 +370,27 @@ function renderTimeline() {
   document.getElementById('tl-inner').style.width = w + 'px'
 
 
-  // Video track clips
-  vt.innerHTML = ''
+  // Clear all tracks
+  const vt2 = document.getElementById('tl-video-track-2')
+  const at2 = document.getElementById('tl-audio-track-2')
+  vt.innerHTML = ''; if (vt2) vt2.innerHTML = ''
+  at.innerHTML = ''; if (at2) at2.innerHTML = ''
+
   clips.forEach(c => {
-    const left  = c.tlStart * tlZoom
-    const width = Math.max(c.tlDuration * tlZoom, 20)
-    const sel   = selectedClip === c.id ? 'selected' : ''
-    const icon  = c.isImage ? '🖼' : '🎬'
+    const trackIdx = c.track || 0
+    const audioTrackIdx = c.audioTrack || 0
 
-    const div = document.createElement('div')
-    div.className = `tl-clip video ${sel}`
-    div.style.cssText = `left:${left}px;width:${width}px`
-    div.dataset.id = c.id
+    // Video element
+    const vEl = makeVideoClipEl(c)
+    if (trackIdx === 1 && vt2) vt2.appendChild(vEl)
+    else vt.appendChild(vEl)
 
-    const leftHandle = document.createElement('div')
-    leftHandle.className = 'tl-resize-handle left'
-    leftHandle.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'resize-left'))
-
-    const label = document.createElement('span')
-    label.className = 'tl-clip-label'
-    label.textContent = icon + ' ' + c.name
-
-    const rightHandle = document.createElement('div')
-    rightHandle.className = 'tl-resize-handle right'
-    rightHandle.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'resize-right'))
-
-    div.appendChild(leftHandle)
-    div.appendChild(label)
-    div.appendChild(rightHandle)
-    div.addEventListener('mousedown', e => {
-      // Only trigger move if not clicking a resize handle
-      if (!e.target.classList.contains('tl-resize-handle')) clipMouseDown(e, c.id, 'move')
-    })
-    vt.appendChild(div)
-  })
-
-  // Audio track clips
-  at.innerHTML = ''
-  clips.forEach(c => {
-    const left  = c.tlStart * tlZoom
-    const width = Math.max(c.tlDuration * tlZoom, 20)
-    const sel   = selectedClip === c.id ? 'selected' : ''
-
-    const div = document.createElement('div')
-    div.className = `tl-clip audio ${sel}`
-    div.style.cssText = `left:${left}px;width:${width}px`
-    div.dataset.id = c.id
-    div.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'move'))
-    at.appendChild(div)
+    // Audio element
+    if (!c.isImage) {
+      const aEl = makeAudioClipEl(c)
+      if (audioTrackIdx === 1 && at2) at2.appendChild(aEl)
+      else at.appendChild(aEl)
+    }
   })
 
   document.getElementById('tl-info').textContent =
@@ -345,14 +398,40 @@ function renderTimeline() {
 }
 
 
-// ── Drag ──────────────────────────────────────────────────────────────────────
+// ── Drag & Drop (con cambio de pista) ────────────────────────────────────────
+// Track IDs in order: videoTrack0, videoTrack1, audioTrack0, audioTrack1
+const TRACK_IDS = ['tl-video-track', 'tl-video-track-2', 'tl-audio-track', 'tl-audio-track-2']
+
+function getTrackAtY(clientY) {
+  for (let i = 0; i < TRACK_IDS.length; i++) {
+    const el = document.getElementById(TRACK_IDS[i])
+    if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (clientY >= r.top && clientY <= r.bottom) return i
+  }
+  return null
+}
+
 function clipMouseDown(e, id, type) {
   e.stopPropagation(); e.preventDefault()
   saveState('mover clip')
   selectClip(id)
   const c = clips.find(x => x.id === id)
   if (!c) return
-  drag = { type, clipId: id, startX: e.clientX, origTlStart: c.tlStart, origTlDuration: c.tlDuration, origStart: c.start }
+  drag = {
+    type,
+    clipId: id,
+    startX: e.clientX,
+    startY: e.clientY,
+    origTlStart: c.tlStart,
+    origTlDuration: c.tlDuration,
+    origStart: c.start,
+    origTrack: c.track || 0,
+    origAudioTrack: c.audioTrack || 0,
+    ghostTrack: c.track || 0
+  }
+  // Add dragging class
+  document.querySelectorAll(`[data-id="${id}"]`).forEach(el => el.classList.add('dragging'))
 }
 
 document.addEventListener('mousemove', e => {
@@ -362,8 +441,20 @@ document.addEventListener('mousemove', e => {
   const dx = e.clientX - drag.startX
   const dt = dx / tlZoom
   const minDur = 0.1
+
   if (drag.type === 'move') {
     c.tlStart = Math.max(0, drag.origTlStart + dt)
+
+    // Detect which track the mouse is hovering
+    const hoveredTrack = getTrackAtY(e.clientY)
+    if (hoveredTrack !== null) {
+      // Highlight hovered track
+      TRACK_IDS.forEach((tid, i) => {
+        const el = document.getElementById(tid)
+        if (el) el.classList.toggle('track-hover', i === hoveredTrack)
+      })
+      drag.ghostTrack = hoveredTrack
+    }
   } else if (drag.type === 'resize-right') {
     c.tlDuration = clamp(drag.origTlDuration + dt, minDur, c.duration - c.start)
   } else if (drag.type === 'resize-left') {
@@ -376,21 +467,44 @@ document.addEventListener('mousemove', e => {
   renderClipPositions()
 })
 
-document.addEventListener('mouseup', () => {
+document.addEventListener('mouseup', e => {
   if (!drag) return
+
+  // Clear track highlights
+  TRACK_IDS.forEach(tid => {
+    const el = document.getElementById(tid)
+    if (el) el.classList.remove('track-hover')
+  })
+  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'))
+
+  if (drag.type === 'move') {
+    const c = clips.find(x => x.id === drag.clipId)
+    if (c && drag.ghostTrack !== null) {
+      // Map track index to video/audio track numbers
+      // 0 = video track 0, 1 = video track 1, 2 = audio track 0, 3 = audio track 1
+      if (drag.ghostTrack <= 1) {
+        c.track = drag.ghostTrack
+        c.audioTrack = drag.ghostTrack  // keep audio in sync
+      } else {
+        c.audioTrack = drag.ghostTrack - 2
+      }
+    }
+  }
+
   drag = null
   renderTimeline()
 })
 
 function renderClipPositions() {
+  const allTracks = ['tl-video-track','tl-video-track-2','tl-audio-track','tl-audio-track-2']
+    .map(id => document.getElementById(id)).filter(Boolean)
   clips.forEach(c => {
     const left  = c.tlStart * tlZoom
     const width = Math.max(c.tlDuration * tlZoom, 20)
-    ;[document.getElementById('tl-video-track'), document.getElementById('tl-audio-track')]
-      .forEach(track => {
-        const el = track.querySelector(`[data-id="${c.id}"]`)
-        if (el) { el.style.left = left + 'px'; el.style.width = width + 'px' }
-      })
+    allTracks.forEach(track => {
+      const el = track.querySelector(`[data-id="${c.id}"]`)
+      if (el) { el.style.left = left + 'px'; el.style.width = width + 'px' }
+    })
   })
 }
 
@@ -398,10 +512,68 @@ function selectClip(id) {
   selectedClip = id
   const c = clips.find(x => x.id === id)
   if (!c) return
+  if (!c.props) c.props = defaultClipProps()
   renderTimeline()
   loadMedia(c.path, c.start)
   if (!c.isImage) setupTrimSliders(c.duration)
+  loadPropsToUI(c.props, c.duration)
+  // Show clip indicator in props panel
+  const ind = document.getElementById('clip-indicator')
+  const indName = document.getElementById('clip-indicator-name')
+  if (ind) { ind.style.display = 'flex'; indName.textContent = c.name }
   setStatus(`Seleccionado: ${c.name}`)
+}
+
+function loadPropsToUI(p, duration) {
+  // Trim
+  const maxDur = duration || 100
+  document.getElementById('trim-s').max   = maxDur
+  document.getElementById('trim-e').max   = maxDur
+  document.getElementById('trim-s').value = p.trimStart || 0
+  document.getElementById('trim-e').value = p.trimEnd   || maxDur
+  document.getElementById('trim-s-v').textContent = fmt(p.trimStart || 0)
+  document.getElementById('trim-e-v').textContent = fmt(p.trimEnd   || maxDur)
+  // Speed
+  document.getElementById('speed-sl').value = p.speed || 100
+  document.getElementById('speed-v').textContent = ((p.speed || 100) / 100).toFixed(2) + '×'
+  // Color
+  document.getElementById('br-sl').value  = p.brightness  || 0
+  document.getElementById('ct-sl').value  = p.contrast    || 0
+  document.getElementById('sat-sl').value = p.saturation  || 0
+  document.getElementById('br-v').textContent  = p.brightness  || 0
+  document.getElementById('ct-v').textContent  = p.contrast    || 0
+  document.getElementById('sat-v').textContent = p.saturation  || 0
+  // Transform
+  document.getElementById('rot-sl').value  = p.rotation || 0
+  document.getElementById('zoom-sl').value = p.zoom     || 100
+  document.getElementById('rot-v').textContent  = (p.rotation || 0) + '°'
+  document.getElementById('zoom-v').textContent = (p.zoom || 100) + '%'
+  // Flip buttons
+  document.getElementById('flip-h-btn').classList.toggle('on', !!p.flipH)
+  document.getElementById('flip-v-btn').classList.toggle('on', !!p.flipV)
+  // Filter buttons
+  document.querySelectorAll('#filter-btns .filter-btn').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.filter === (p.filter || ''))
+  })
+  // Apply to preview
+  applyVideoStyle()
+}
+
+function savePropsFromUI() {
+  const c = getSelectedClip()
+  if (!c) return
+  if (!c.props) c.props = defaultClipProps()
+  c.props.trimStart   = parseFloat(document.getElementById('trim-s').value) || 0
+  c.props.trimEnd     = parseFloat(document.getElementById('trim-e').value) || 0
+  c.props.speed       = parseInt(document.getElementById('speed-sl').value)  || 100
+  c.props.brightness  = parseInt(document.getElementById('br-sl').value)     || 0
+  c.props.contrast    = parseInt(document.getElementById('ct-sl').value)     || 0
+  c.props.saturation  = parseInt(document.getElementById('sat-sl').value)    || 0
+  c.props.rotation    = parseInt(document.getElementById('rot-sl').value)    || 0
+  c.props.zoom        = parseInt(document.getElementById('zoom-sl').value)   || 100
+  c.props.flipH       = !!document.getElementById('flip-h-btn').classList.contains('on')
+  c.props.flipV       = !!document.getElementById('flip-v-btn').classList.contains('on')
+  c.props.filter      = currentFilter
 }
 
 function splitClip() {
@@ -410,19 +582,36 @@ function splitClip() {
   const idx = clips.findIndex(c => c.id === selectedClip)
   if (idx < 0) return
   const c = clips[idx]
-  const splitAt = vid.currentTime - c.start
-  if (splitAt <= 0.05 || splitAt >= c.tlDuration - 0.05) { setStatus('Posiciona el playhead dentro del clip'); return }
+
+  // Use playhead global time to find split point relative to clip
+  const playheadEl = document.getElementById('tl-playhead')
+  const playheadLeft = parseFloat(playheadEl.style.left) || 0
+  const playheadT = playheadLeft / tlZoom  // global timeline seconds
+
+  // splitAt = how far into the clip the playhead is
+  const splitAt = playheadT - c.tlStart
+  if (splitAt <= 0.05 || splitAt >= c.tlDuration - 0.05) {
+    setStatus('Posiciona el playhead dentro del clip para dividir'); return
+  }
+
   const newId = Date.now()
   const c2 = {
-    id: newId, path: c.path, name: c.name + '_B',
-    start: c.start + splitAt, duration: c.duration,
-    tlStart: c.tlStart + splitAt, tlDuration: c.tlDuration - splitAt,
-    isImage: c.isImage || false
+    id: newId,
+    path: c.path,
+    name: c.name + '_B',
+    start: c.start + splitAt,
+    duration: c.duration,
+    tlStart: c.tlStart + splitAt,
+    tlDuration: c.tlDuration - splitAt,
+    isImage: c.isImage || false,
+    track: c.track || 0,
+    audioTrack: c.audioTrack || 0,
+    props: JSON.parse(JSON.stringify(c.props || defaultClipProps()))
   }
   c.tlDuration = splitAt
   clips.splice(idx + 1, 0, c2)
   renderTimeline()
-  setStatus('Clip dividido')
+  setStatus('Clip dividido ✓')
 }
 
 function deleteClip() {
@@ -453,7 +642,53 @@ function updatePlayhead(t) {
 
 // ── Reproducción multi-clip ───────────────────────────────────────────────────
 function buildPlayQueue() {
-  return [...clips].sort((a, b) => a.tlStart - b.tlStart)
+  // Build a flat timeline: for each moment in time, pick the clip with highest priority
+  // Priority: track 0 (Video 1) > track 1 (Video 2)
+  // Strategy: collect all clips sorted by tlStart, then resolve overlaps by track priority.
+  // Result: a non-overlapping sequence of clips representing what the viewer sees.
+  
+  const sorted = [...clips].sort((a, b) => a.tlStart - b.tlStart || (a.track || 0) - (b.track || 0))
+  
+  // Find all unique time boundaries
+  const times = new Set([0])
+  sorted.forEach(c => { times.add(c.tlStart); times.add(c.tlStart + c.tlDuration) })
+  const boundaries = [...times].sort((a, b) => a - b)
+  
+  const queue = []
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const t = boundaries[i]
+    const tEnd = boundaries[i + 1]
+    if (tEnd - t < 0.01) continue  // skip tiny gaps
+    
+    // Find highest priority clip active at time t
+    // track 0 = highest priority, then track 1
+    const active = sorted.filter(c => c.tlStart <= t && c.tlStart + c.tlDuration > t)
+    if (!active.length) continue
+    
+    // Pick lowest track number (Video 1 over Video 2)
+    active.sort((a, b) => (a.track || 0) - (b.track || 0))
+    const winner = active[0]
+    
+    // Create a segment referencing this clip for this time slice
+    const segStart = winner.start + (t - winner.tlStart)
+    const segDur = tEnd - t
+    
+    // Merge with previous segment if same clip
+    const last = queue[queue.length - 1]
+    if (last && last._clipId === winner.id && Math.abs((last.tlStart + last.tlDuration) - t) < 0.02) {
+      last.tlDuration += segDur
+    } else {
+      queue.push({
+        ...winner,
+        tlStart: t,
+        tlDuration: segDur,
+        start: segStart,
+        _clipId: winner.id
+      })
+    }
+  }
+  
+  return queue
 }
 
 function togglePlay() {
@@ -573,6 +808,7 @@ function updateTrim() {
   document.getElementById('trim-e-v').textContent = fmt(te)
   if (vid.duration) vid.currentTime = ts
   updateProgressMarkers()
+  savePropsFromUI()
 }
 
 function updateProgressMarkers() {
@@ -585,6 +821,7 @@ function updateProgressMarkers() {
 function updateSpeed(v) {
   vid.playbackRate = v / 100
   document.getElementById('speed-v').textContent = (v / 100).toFixed(2) + '×'
+  savePropsFromUI()
 }
 function setSpeed(v) { document.getElementById('speed-sl').value = v; updateSpeed(v) }
 
@@ -594,28 +831,42 @@ function updateAdj() {
   document.getElementById('ct-v').textContent  = document.getElementById('ct-sl').value
   document.getElementById('sat-v').textContent = document.getElementById('sat-sl').value
   applyVideoStyle()
+  savePropsFromUI()
 }
 
 function updateTransform() {
   document.getElementById('rot-v').textContent  = document.getElementById('rot-sl').value + '°'
   document.getElementById('zoom-v').textContent = document.getElementById('zoom-sl').value + '%'
   applyVideoStyle()
+  savePropsFromUI()
 }
 
 function toggleFlip(axis) {
-  if (axis === 'h') { flipH = !flipH; document.getElementById('flip-h-btn').classList.toggle('on', flipH) }
-  else              { flipV = !flipV; document.getElementById('flip-v-btn').classList.toggle('on', flipV) }
+  const hBtn = document.getElementById('flip-h-btn')
+  const vBtn = document.getElementById('flip-v-btn')
+  if (axis === 'h') { flipH = !flipH; hBtn.classList.toggle('on', flipH) }
+  else              { flipV = !flipV; vBtn.classList.toggle('on', flipV) }
   applyVideoStyle()
+  savePropsFromUI()
 }
 
 function applyVideoStyle() {
-  const br  = (parseFloat(document.getElementById('br-sl').value)  / 100 + 1).toFixed(2)
-  const ct  = (parseFloat(document.getElementById('ct-sl').value)  / 100 + 1).toFixed(2)
-  const sat = (parseFloat(document.getElementById('sat-sl').value) / 100 + 1).toFixed(2)
-  const rot  = document.getElementById('rot-sl').value
-  const zoom = document.getElementById('zoom-sl').value / 100
-  const filterStr    = `brightness(${br}) contrast(${ct}) saturate(${sat}) ${currentFilter}`
-  const transformStr = `rotate(${rot}deg) scale(${flipH ? -zoom : zoom},${flipV ? -zoom : zoom})`
+  const c = getSelectedClip()
+  const p = c ? (c.props || defaultClipProps()) : null
+  const brVal  = p ? p.brightness  : parseFloat(document.getElementById('br-sl').value)
+  const ctVal  = p ? p.contrast    : parseFloat(document.getElementById('ct-sl').value)
+  const satVal = p ? p.saturation  : parseFloat(document.getElementById('sat-sl').value)
+  const rotVal = p ? p.rotation    : parseFloat(document.getElementById('rot-sl').value)
+  const zoomVal= p ? p.zoom        : parseFloat(document.getElementById('zoom-sl').value)
+  const fH     = p ? p.flipH       : flipH
+  const fV     = p ? p.flipV       : flipV
+  const filt   = p ? p.filter      : currentFilter
+  const br  = (brVal  / 100 + 1).toFixed(2)
+  const ct  = (ctVal  / 100 + 1).toFixed(2)
+  const sat = (satVal / 100 + 1).toFixed(2)
+  const zoom = zoomVal / 100
+  const filterStr    = `brightness(${br}) contrast(${ct}) saturate(${sat}) ${filt}`
+  const transformStr = `rotate(${rotVal}deg) scale(${fH ? -zoom : zoom},${fV ? -zoom : zoom})`
   vid.style.filter    = filterStr
   vid.style.transform = transformStr
   const previewImg = document.getElementById('preview-img')
@@ -627,9 +878,25 @@ function applyVideoStyle() {
 
 function setFilter(btn, filter) {
   currentFilter = filter
-  document.querySelectorAll('.prop-btns .pbtn').forEach(b => b.classList.remove('on'))
+  document.querySelectorAll('#filter-btns .filter-btn').forEach(b => b.classList.remove('on'))
   btn.classList.add('on')
   applyVideoStyle()
+  savePropsFromUI()
+}
+
+
+// ── Aplicar propiedades a todos los clips ─────────────────────────────────────
+function applyToAll() {
+  const c = getSelectedClip()
+  if (!c || !c.props) { setStatus('Selecciona un clip primero'); return }
+  saveState('aplicar a todos')
+  const propsCopy = JSON.parse(JSON.stringify(c.props))
+  clips.forEach(clip => {
+    if (clip.id !== c.id) {
+      clip.props = JSON.parse(JSON.stringify(propsCopy))
+    }
+  })
+  setStatus('Propiedades aplicadas a todos los clips ✓')
 }
 
 // ── Exportar ──────────────────────────────────────────────────────────────────
@@ -705,6 +972,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnUndo) btnUndo.addEventListener('click', undo)
   if (btnRedo) btnRedo.addEventListener('click', redo)
   updateUndoButtons()
+  document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
 
   // Props panel tab switching
   document.querySelectorAll('.props-tab').forEach(tab => {
