@@ -1,0 +1,15 @@
+{
+  "name": "video-editor",
+  "version": "1.0.0",
+  "description": "Editor de video",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron --ozone-platform=x11 ."
+  },
+  "devDependencies": {
+    "electron": "^36.0.0"
+  },
+  "dependencies": {
+    "fluent-ffmpeg": "^2.1.3"
+  }
+}
