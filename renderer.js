@@ -16,6 +16,7 @@ let isPlayingQueue = false
 
 // Drag state
 let drag = null
+let libraryDrag = null  // drag from library to timeline
 
 
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
@@ -152,7 +153,7 @@ function renderMediaPanel() {
   if (!mediaItems.length) {
     const hint = document.createElement('div')
     hint.className = 'empty-hint'
-    hint.innerHTML = '<div class="empty-icon">🎬</div>Importa archivos con<br>el botón de arriba.<br>Doble clic para agregar<br>al timeline.'
+    hint.innerHTML = '<div class="empty-icon">🎬</div>Importa archivos con<br>el botón de arriba.<br>Arrastra al timeline<br>o doble clic para agregar.'
     list.appendChild(hint)
     return
   }
@@ -192,6 +193,13 @@ function renderMediaPanel() {
 
     item.addEventListener('click', () => selectMedia(i))
     item.addEventListener('dblclick', () => { selectMedia(i); addToTimeline() })
+
+    // Native mousedown drag (works in Electron, no HTML5 drag API needed)
+    item.addEventListener('mousedown', e => {
+      if (e.button !== 0) return
+      if (e.target.classList.contains('media-add-btn')) return
+      startLibraryDrag(e, i)
+    })
 
     list.appendChild(item)
   })
@@ -623,17 +631,45 @@ function deleteClip() {
   setStatus('Clip eliminado')
 }
 
-function setTLZoom(v) { tlZoom = parseInt(v); renderTimeline() }
+function setTLZoom(v, anchorT) {
+  const prevZoom = tlZoom
+  tlZoom = Math.max(20, Math.min(250, parseInt(v)))
+  const slider = document.getElementById('tl-zoom-sl')
+  if (slider) slider.value = tlZoom
+  renderTimeline()
+  // Keep anchor point (e.g. mouse position) stable after zoom
+  if (anchorT !== undefined) {
+    const scrollEl = document.getElementById('tl-scroll')
+    const newX = anchorT * tlZoom
+    const visibleWidth = scrollEl.clientWidth
+    scrollEl.scrollLeft = Math.max(0, newX - visibleWidth / 2)
+  }
+}
+
+// ── Playhead drag scrubbing ───────────────────────────────────────────────────
+let playheadDragging = false
+
+function seekToTime(t) {
+  t = Math.max(0, t)
+  updatePlayhead(t)
+  const c = clips.find(cl => t >= cl.tlStart && t <= cl.tlStart + cl.tlDuration)
+  if (c) {
+    selectClip(c.id)
+    if (!c.isImage) vid.currentTime = c.start + (t - c.tlStart)
+  }
+}
 
 function tlSeek(e) {
   if (drag) return
   const scrollEl = document.getElementById('tl-scroll')
   const rect = scrollEl.getBoundingClientRect()
   const x = e.clientX - rect.left + scrollEl.scrollLeft
-  const t = x / tlZoom
-  const c = clips.find(cl => t >= cl.tlStart && t <= cl.tlStart + cl.tlDuration)
-  if (c) { selectClip(c.id); if (!c.isImage) vid.currentTime = c.start + (t - c.tlStart) }
-  updatePlayhead(t)
+  seekToTime(x / tlZoom)
+}
+
+function getPlayheadTime() {
+  const left = parseFloat(document.getElementById('tl-playhead').style.left) || 0
+  return left / tlZoom
 }
 
 function updatePlayhead(t) {
@@ -957,13 +993,228 @@ async function startExport() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTimeline()
 // ── Event Listeners (CSP-safe, no inline handlers) ───────────────────────────
+
+// ── Library → Timeline native drag ───────────────────────────────────────────
+let libDragGhost = null     // floating ghost element
+let libDragIndex = null     // mediaItems index being dragged
+let libDragActive = false
+let libDragHoverTrack = null  // { el, isVideo, track }
+
+const LIB_TRACKS = [
+  { id: 'tl-video-track',   isVideo: true,  track: 0 },
+  { id: 'tl-video-track-2', isVideo: true,  track: 1 },
+  { id: 'tl-audio-track',   isVideo: false, track: 0 },
+  { id: 'tl-audio-track-2', isVideo: false, track: 1 },
+]
+
+function startLibraryDrag(e, index) {
+  libDragIndex = index
+  libDragActive = false
+  selectMedia(index)
+
+  const m = mediaItems[index]
+  const startX = e.clientX
+  const startY = e.clientY
+
+  function onMove(ev) {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+
+    // Start drag only after moving 5px
+    if (!libDragActive && Math.sqrt(dx*dx + dy*dy) < 5) return
+    if (!libDragActive) {
+      libDragActive = true
+      // Create ghost
+      libDragGhost = document.createElement('div')
+      libDragGhost.className = 'lib-drag-ghost'
+      libDragGhost.textContent = (m.isImage ? '🖼️ ' : '🎬 ') + m.name
+      document.body.appendChild(libDragGhost)
+    }
+
+    // Move ghost with cursor
+    libDragGhost.style.left = ev.clientX + 14 + 'px'
+    libDragGhost.style.top  = ev.clientY - 14 + 'px'
+
+    // Detect which track the cursor is over
+    let found = null
+    for (const t of LIB_TRACKS) {
+      const el = document.getElementById(t.id)
+      if (!el) continue
+      const r = el.getBoundingClientRect()
+      if (ev.clientY >= r.top && ev.clientY <= r.bottom &&
+          ev.clientX >= r.left && ev.clientX <= r.right) {
+        found = t
+        break
+      }
+    }
+
+    // Update highlights
+    LIB_TRACKS.forEach(t => {
+      const el = document.getElementById(t.id)
+      if (el) el.classList.toggle('track-drop-target', found && found.id === t.id)
+    })
+    libDragHoverTrack = found
+  }
+
+  function onUp(ev) {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+
+    // Cleanup ghost
+    if (libDragGhost) { libDragGhost.remove(); libDragGhost = null }
+    LIB_TRACKS.forEach(t => {
+      const el = document.getElementById(t.id)
+      if (el) el.classList.remove('track-drop-target')
+    })
+
+    if (!libDragActive || !libDragHoverTrack) {
+      libDragActive = false
+      libDragIndex = null
+      libDragHoverTrack = null
+      return
+    }
+
+    // Drop: add clip at cursor position on the hovered track
+    const { isVideo, track } = libDragHoverTrack
+    const trackEl = document.getElementById(libDragHoverTrack.id)
+    const scrollEl = document.getElementById('tl-scroll')
+    const rect = trackEl.getBoundingClientRect()
+    const x = ev.clientX - rect.left + scrollEl.scrollLeft
+    let tlStart = Math.max(0, x / tlZoom)
+
+    const m = mediaItems[libDragIndex]
+    const isImg = m.isImage || false
+    const clipDuration = isImg ? 5 : (m.duration || 10)
+
+    // Avoid overlap on same track
+    const trackClips = clips.filter(c => isVideo
+      ? (c.track || 0) === track
+      : (c.audioTrack || 0) === track)
+    for (const c of trackClips) {
+      if (tlStart < c.tlStart + c.tlDuration && tlStart + clipDuration > c.tlStart) {
+        tlStart = c.tlStart + c.tlDuration
+      }
+    }
+
+    saveState('agregar clip desde librería')
+    const props = defaultClipProps()
+    props.trimEnd = clipDuration
+
+    clips.push({
+      id: Date.now(),
+      path: m.path,
+      name: m.name,
+      start: 0,
+      duration: clipDuration,
+      tlStart,
+      tlDuration: clipDuration,
+      isImage: isImg,
+      track: isVideo ? track : 0,
+      audioTrack: isVideo ? track : track,
+      props
+    })
+    renderTimeline()
+    setStatus(`Clip agregado: ${m.name}`)
+
+    libDragActive = false
+    libDragIndex = null
+    libDragHoverTrack = null
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
-  // Undo / Redo keyboard shortcuts
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
     const ctrl = e.ctrlKey || e.metaKey
-    if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
-    if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
+    const tag  = document.activeElement.tagName
+
+    // Don't hijack input fields
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+
+    // Undo / Redo
+    if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+    if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
+
+    const step = e.shiftKey ? 5 : 1  // hold Shift for bigger jumps
+
+    switch (e.key) {
+      // Space = play/pause
+      case ' ':
+        e.preventDefault()
+        togglePlay()
+        break
+
+      // Arrow Left/Right = move playhead
+      case 'ArrowLeft':
+        e.preventDefault()
+        seekToTime(getPlayheadTime() - (step / tlZoom * 10))
+        break
+      case 'ArrowRight':
+        e.preventDefault()
+        seekToTime(getPlayheadTime() + (step / tlZoom * 10))
+        break
+
+      // Arrow Up/Down = zoom in/out
+      case 'ArrowUp':
+        e.preventDefault()
+        setTLZoom(tlZoom + 10 * step, getPlayheadTime())
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        setTLZoom(tlZoom - 10 * step, getPlayheadTime())
+        break
+
+      // J K L = classic video editor shortcuts
+      case 'j': seekToTime(getPlayheadTime() - 1); break  // back 1s
+      case 'l': seekToTime(getPlayheadTime() + 1); break  // fwd 1s
+      case 'k': vid.paused ? vid.play() : vid.pause(); break
+
+      // Delete = remove selected clip
+      case 'Delete':
+      case 'Backspace':
+        if (selectedClip) { e.preventDefault(); deleteClip() }
+        break
+    }
+  })
+
+  // ── Mouse wheel zoom on timeline ─────────────────────────────────────────────
+  document.getElementById('tl-scroll').addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      // Zoom centered on mouse position
+      const rect = document.getElementById('tl-scroll').getBoundingClientRect()
+      const mouseX = e.clientX - rect.left + document.getElementById('tl-scroll').scrollLeft
+      const anchorT = mouseX / tlZoom
+      const delta = e.deltaY < 0 ? 15 : -15
+      setTLZoom(tlZoom + delta, anchorT)
+    } else if (e.shiftKey) {
+      // Shift+scroll = horizontal scroll (already default on many systems)
+      document.getElementById('tl-scroll').scrollLeft += e.deltaY
+      e.preventDefault()
+    }
+  }, { passive: false })
+
+  // ── Playhead drag on ruler ────────────────────────────────────────────────────
+  const ruler = document.getElementById('tl-ruler')
+  ruler.style.cursor = 'col-resize'
+
+  ruler.addEventListener('mousedown', e => {
+    playheadDragging = true
+    tlSeek(e)
+    e.stopPropagation()
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!playheadDragging) return
+    tlSeek(e)
+  })
+
+  document.addEventListener('mouseup', e => {
+    playheadDragging = false
   })
 
   // Undo / Redo buttons
@@ -1027,7 +1278,13 @@ document.addEventListener('DOMContentLoaded', () => {
   })
 
   // Timeline
-  document.getElementById('tl-scroll').addEventListener('click', tlSeek)
+  // Scrub playhead by dragging on the scroll area (not on clips)
+  document.getElementById('tl-scroll').addEventListener('mousedown', e => {
+    if (e.target.id === 'tl-scroll' || e.target.id === 'tl-inner' || e.target.id === 'tl-ruler') {
+      playheadDragging = true
+      tlSeek(e)
+    }
+  })
   document.getElementById('btn-split-tl').addEventListener('click', splitClip)
   document.getElementById('btn-delete-tl').addEventListener('click', deleteClip)
 })

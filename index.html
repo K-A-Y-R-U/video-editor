@@ -676,6 +676,43 @@ body {
 #tl-video-track:empty .track-empty-hint, #tl-video-track-2:empty .track-empty-hint,
 #tl-audio-track:empty .track-empty-hint, #tl-audio-track-2:empty .track-empty-hint { opacity: 1; }
 
+
+#tl-ruler { cursor: col-resize; }
+#tl-playhead { cursor: col-resize; }
+#tl-playhead::before { cursor: col-resize; }
+.playhead-dragging * { cursor: col-resize !important; }
+
+
+/* Library drag */
+.media-item { cursor: grab; }
+.media-item:active { cursor: grabbing; }
+
+.lib-drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+  transform: rotate(-2deg);
+}
+
+/* Track drop target highlight */
+.track-drop-target {
+  background: rgba(91,110,248,0.15) !important;
+  outline: 2px dashed var(--accent) !important;
+  outline-offset: -2px;
+}
+
 /* ── SCROLLBARS GLOBAL ───────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
