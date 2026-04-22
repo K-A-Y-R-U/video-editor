@@ -5,8 +5,6 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' file: blob:; img-src 'self' file: data:">
 <title>VideoEdit</title>
 <style>
-/* fonts loaded locally */
-
 :root {
   --bg-base:      #0f0f11;
   --bg-1:         #161618;
@@ -42,7 +40,7 @@ body {
   height: 100vh;
   display: grid;
   grid-template-rows: 44px 1fr 210px;
-  grid-template-columns: 230px 1fr 260px;
+  grid-template-columns: 54px 280px 1fr 270px;
   overflow: hidden;
   user-select: none;
 }
@@ -57,13 +55,7 @@ body {
   padding: 0 14px;
   gap: 6px;
 }
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-right: 10px;
-}
+.logo { display: flex; align-items: center; gap: 7px; margin-right: 10px; }
 .logo-icon {
   width: 26px; height: 26px;
   background: var(--accent);
@@ -72,15 +64,8 @@ body {
   font-size: 13px;
   box-shadow: 0 0 12px var(--accent-glow);
 }
-.logo-text {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-1);
-  letter-spacing: -0.3px;
-}
-
+.logo-text { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: -0.3px; }
 .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
-
 .tbtn {
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -96,18 +81,12 @@ body {
   white-space: nowrap;
 }
 .tbtn:hover { background: var(--bg-4); color: var(--text-1); border-color: var(--border-light); }
-.tbtn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  box-shadow: 0 0 12px var(--accent-glow);
-}
+.tbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 12px var(--accent-glow); }
 .tbtn.primary:hover { background: #4a5de8; box-shadow: 0 0 18px var(--accent-glow); }
 .tbtn.danger { color: var(--red); border-color: var(--red-dim); }
 .tbtn.danger:hover { background: var(--red-dim); color: #ff8080; }
 .tbtn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 .tbtn-icon { font-size: 11px; opacity: 0.8; }
-
 #status {
   margin-left: auto;
   font-size: 11px;
@@ -119,604 +98,208 @@ body {
   font-family: 'Cascadia Code', 'Consolas', monospace;
 }
 
-/* ── LEFT PANEL ──────────────────────────────────────────────────────── */
+/* ── LEFT RAIL ───────────────────────────────────────────────────────── */
+#left-rail {
+  background: var(--bg-base);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 2px;
+  overflow-y: auto;
+  grid-row: 2;
+}
+#left-rail::-webkit-scrollbar { display: none; }
+.rail-btn {
+  width: 48px;
+  padding: 8px 4px 7px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.12s;
+  font-family: inherit;
+}
+.rail-btn:hover { background: var(--bg-2); color: var(--text-2); }
+.rail-btn.active { background: var(--accent-dim); color: var(--accent); }
+.rail-icon { font-size: 18px; line-height: 1; font-style: normal; font-weight: 600; }
+.rail-label { font-size: 9px; font-weight: 500; letter-spacing: 0.2px; line-height: 1; }
+
+/* ── LEFT CONTENT PANEL ──────────────────────────────────────────────── */
 #media-panel {
   background: var(--bg-1);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  grid-row: 2;
 }
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--border);
-}
-.panel-title {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-.panel-count {
-  font-size: 10px;
-  color: var(--text-3);
-  background: var(--bg-3);
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-}
-
+.lpanel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.lpanel-placeholder { overflow-y: auto; }
+.lpanel-placeholder::-webkit-scrollbar { width: 3px; }
+.lpanel-placeholder::-webkit-scrollbar-thumb { background: var(--bg-4); }
+.placeholder-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 10px; }
+.sticker-grid { grid-template-columns: repeat(3, 1fr); }
+.ph-item { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 22px; cursor: pointer; transition: all 0.12s; }
+.ph-item span { font-size: 10px; color: var(--text-3); }
+.ph-item:hover { background: var(--bg-4); border-color: var(--border-light); }
+.ph-text-item { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 8px; color: var(--text-1); text-align: center; cursor: pointer; transition: all 0.12s; }
+.ph-text-item:hover { background: var(--bg-4); border-color: var(--accent); }
+.ph-sticker { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px; font-size: 24px; text-align: center; cursor: pointer; transition: all 0.12s; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+.ph-sticker:hover { background: var(--bg-4); transform: scale(1.08); }
+.ph-effect { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 6px; font-size: 11px; font-weight: 500; color: var(--text-2); text-align: center; cursor: pointer; transition: all 0.12s; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+.ph-effect:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.ph-filter { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 6px; font-size: 11px; font-weight: 500; color: var(--text-2); text-align: center; cursor: pointer; transition: all 0.12s; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+.ph-filter:hover { border-color: var(--accent); }
+.ph-coming { text-align: center; font-size: 11px; color: var(--text-3); padding: 16px; margin-top: auto; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
+.panel-title { font-size: 10px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 1px; }
+.panel-count { font-size: 10px; color: var(--text-3); background: var(--bg-3); padding: 1px 6px; border-radius: 10px; font-family: 'Cascadia Code', 'Consolas', monospace; }
 #media-list { flex: 1; overflow-y: auto; padding: 6px; }
 #media-list::-webkit-scrollbar { width: 4px; }
 #media-list::-webkit-scrollbar-track { background: transparent; }
 #media-list::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
-
-.media-item {
-  background: var(--bg-2);
-  border-radius: var(--radius-md);
-  padding: 9px 10px;
-  margin-bottom: 3px;
-  cursor: pointer;
-  border: 1.5px solid transparent;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  transition: all 0.12s;
-}
+.media-item { background: var(--bg-2); border-radius: var(--radius-md); padding: 9px 10px; margin-bottom: 3px; cursor: pointer; border: 1.5px solid transparent; display: flex; align-items: center; gap: 9px; transition: all 0.12s; }
 .media-item:hover { background: var(--bg-3); border-color: var(--border-light); }
 .media-item.active { border-color: var(--accent); background: rgba(91,110,248,0.08); }
-
-.media-thumb {
-  width: 36px; height: 24px;
-  background: var(--bg-4);
-  border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
+.media-thumb { width: 36px; height: 24px; background: var(--bg-4); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; overflow: hidden; }
 .media-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .media-info { flex: 1; min-width: 0; }
 .media-name { font-size: 12px; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .media-dur { font-size: 10px; color: var(--text-3); margin-top: 1px; font-family: 'Cascadia Code', 'Consolas', monospace; }
-
-.media-add-btn {
-  width: 22px; height: 22px;
-  background: var(--bg-4);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: var(--text-3);
-  font-size: 14px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.12s;
-  line-height: 1;
-}
+.media-add-btn { width: 22px; height: 22px; background: var(--bg-4); border: 1px solid var(--border); border-radius: 50%; color: var(--text-3); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.12s; line-height: 1; }
 .media-add-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-.empty-hint {
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 24px 12px;
-  text-align: center;
-  line-height: 1.8;
-}
+.empty-hint { color: var(--text-3); font-size: 12px; padding: 24px 12px; text-align: center; line-height: 1.8; }
 .empty-hint .empty-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.4; }
 
 /* ── PLAYER ──────────────────────────────────────────────────────────── */
-#player-area {
-  background: #090909;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-#player-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
-  background: radial-gradient(ellipse at center, #141416 0%, #090909 100%);
-}
-
-#main-video {
-  max-width: 100%;
-  max-height: 100%;
-  display: none;
-  border-radius: 2px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
-}
-
-#no-video {
-  color: var(--text-3);
-  font-size: 13px;
-  text-align: center;
-  line-height: 2.2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
+#player-area { background: #090909; display: flex; flex-direction: column; overflow: hidden; grid-row: 2; grid-column: 3; }
+#player-wrap { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; background: radial-gradient(ellipse at center, #141416 0%, #090909 100%); }
+#main-video { max-width: 100%; max-height: 100%; display: none; border-radius: 2px; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
+#no-video { color: var(--text-3); font-size: 13px; text-align: center; line-height: 2.2; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .no-video-icon { font-size: 36px; opacity: 0.2; margin-bottom: 6px; }
 
 /* ── CONTROLS ──────────────────────────────────────────────────────── */
-#controls {
-  background: var(--bg-1);
-  border-top: 1px solid var(--border);
-  padding: 8px 14px 10px;
-}
-
-#progress-bar {
-  width: 100%;
-  height: 3px;
-  background: var(--bg-4);
-  border-radius: 2px;
-  cursor: pointer;
-  margin-bottom: 10px;
-  position: relative;
-  transition: height 0.15s;
-}
+#controls { background: var(--bg-1); border-top: 1px solid var(--border); padding: 8px 14px 10px; }
+#progress-bar { width: 100%; height: 3px; background: var(--bg-4); border-radius: 2px; cursor: pointer; margin-bottom: 10px; position: relative; transition: height 0.15s; }
 #progress-bar:hover { height: 5px; margin-bottom: 8px; }
-#progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  width: 0;
-  pointer-events: none;
-  box-shadow: 0 0 6px var(--accent-glow);
-}
-#trim-start-marker, #trim-end-marker {
-  position: absolute;
-  top: -6px;
-  width: 3px; height: 15px;
-  background: var(--orange);
-  border-radius: 2px;
-  cursor: ew-resize;
-  z-index: 2;
-  box-shadow: 0 0 6px rgba(245,166,35,0.4);
-}
-
-.ctrl-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.cbtn {
-  background: none;
-  border: none;
-  color: var(--text-3);
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px 5px;
-  border-radius: var(--radius-sm);
-  line-height: 1;
-  transition: all 0.12s;
-  display: flex; align-items: center;
-}
+#progress-fill { height: 100%; background: var(--accent); border-radius: 2px; width: 0; pointer-events: none; box-shadow: 0 0 6px var(--accent-glow); }
+#trim-start-marker, #trim-end-marker { position: absolute; top: -6px; width: 3px; height: 15px; background: var(--orange); border-radius: 2px; cursor: ew-resize; z-index: 2; box-shadow: 0 0 6px rgba(245,166,35,0.4); }
+.ctrl-row { display: flex; align-items: center; gap: 4px; }
+.cbtn { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 16px; padding: 4px 5px; border-radius: var(--radius-sm); line-height: 1; transition: all 0.12s; display: flex; align-items: center; }
 .cbtn:hover { color: var(--text-1); background: var(--bg-3); }
-
-#play-btn {
-  width: 32px; height: 32px;
-  background: var(--accent);
-  border-radius: 50%;
-  color: #fff;
-  font-size: 14px;
-  justify-content: center;
-  box-shadow: 0 0 10px var(--accent-glow);
-  margin: 0 4px;
-}
+#play-btn { width: 32px; height: 32px; background: var(--accent); border-radius: 50%; color: #fff; font-size: 14px; justify-content: center; box-shadow: 0 0 10px var(--accent-glow); margin: 0 4px; }
 #play-btn:hover { background: #4a5de8; transform: scale(1.05); }
-
-.ctrl-sel {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  font-size: 11px;
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-  border-radius: var(--radius-sm);
-  padding: 3px 6px;
-  cursor: pointer;
-  margin-left: 4px;
-}
-
-.time-block {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-#time-display {
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-}
-#global-time {
-  font-size: 11px;
-  color: var(--accent);
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-  background: var(--accent-dim);
-  padding: 2px 7px;
-  border-radius: 10px;
-}
+.ctrl-sel { background: var(--bg-2); border: 1px solid var(--border); color: var(--text-2); font-size: 11px; font-family: 'Cascadia Code', 'Consolas', monospace; border-radius: var(--radius-sm); padding: 3px 6px; cursor: pointer; margin-left: 4px; }
+.time-block { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+#time-display { font-size: 11px; color: var(--text-3); font-family: 'Cascadia Code', 'Consolas', monospace; }
+#global-time { font-size: 11px; color: var(--accent); font-family: 'Cascadia Code', 'Consolas', monospace; background: var(--accent-dim); padding: 2px 7px; border-radius: 10px; }
 
 /* ── RIGHT PANEL ─────────────────────────────────────────────────────── */
-#props-panel {
-  background: var(--bg-1);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
+#props-panel { background: var(--bg-1); border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; grid-row: 2; grid-column: 4; }
 #props-panel::-webkit-scrollbar { width: 4px; }
 #props-panel::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
-
-.props-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-  position: sticky; top: 0; z-index: 10;
-}
-.props-tab {
-  flex: 1;
-  padding: 10px 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-3);
-  text-align: center;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-}
+.props-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg-1); position: sticky; top: 0; z-index: 10; }
+.props-tab { flex: 1; padding: 10px 4px; font-size: 11px; font-weight: 500; color: var(--text-3); text-align: center; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: none; border-top: none; border-left: none; border-right: none; }
 .props-tab:hover { color: var(--text-2); }
 .props-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
 .props-body { padding: 12px; flex: 1; }
-
 .prop-section { margin-bottom: 16px; }
-.prop-section-title {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 8px;
-  display: flex; align-items: center; gap: 6px;
-}
-.prop-section-title::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.prop-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.prop-label {
-  font-size: 11px;
-  color: var(--text-3);
-  min-width: 60px;
-  flex-shrink: 0;
-}
-.prop-row input[type=range] {
-  flex: 1;
-  accent-color: var(--accent);
-  height: 3px;
-  cursor: pointer;
-}
-.prop-val {
-  font-size: 11px;
-  color: var(--text-2);
-  min-width: 36px;
-  text-align: right;
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-  background: var(--bg-3);
-  padding: 2px 5px;
-  border-radius: 4px;
-}
-
+.prop-section-title { font-size: 10px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.prop-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.prop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prop-label { font-size: 11px; color: var(--text-3); min-width: 60px; flex-shrink: 0; }
+.prop-row input[type=range] { flex: 1; accent-color: var(--accent); height: 3px; cursor: pointer; }
+.prop-val { font-size: 11px; color: var(--text-2); min-width: 36px; text-align: right; font-family: 'Cascadia Code', 'Consolas', monospace; background: var(--bg-3); padding: 2px 5px; border-radius: 4px; }
 .prop-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-.pbtn {
-  background: var(--bg-3);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  font-size: 11px;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  font-weight: 500;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.12s;
-}
+.pbtn { background: var(--bg-3); border: 1px solid var(--border); color: var(--text-2); font-size: 11px; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-weight: 500; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.12s; }
 .pbtn:hover { background: var(--bg-4); color: var(--text-1); border-color: var(--border-light); }
 .pbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-}
-.filter-btn {
-  background: var(--bg-3);
-  border: 1.5px solid transparent;
-  border-radius: var(--radius-sm);
-  padding: 8px 4px 6px;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.12s;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  color: var(--text-2);
-}
+.filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.filter-btn { background: var(--bg-3); border: 1.5px solid transparent; border-radius: var(--radius-sm); padding: 8px 4px 6px; cursor: pointer; text-align: center; transition: all 0.12s; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--text-2); }
 .filter-btn:hover { background: var(--bg-4); border-color: var(--border-light); }
 .filter-btn.on { border-color: var(--accent); background: rgba(91,110,248,0.12); color: var(--accent); }
-.filter-preview {
-  width: 100%;
-  aspect-ratio: 16/9;
-  background: var(--bg-4);
-  border-radius: 3px;
-  margin-bottom: 4px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
-  overflow: hidden;
-}
+.filter-preview { width: 100%; aspect-ratio: 16/9; background: var(--bg-4); border-radius: 3px; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden; }
 .filter-name { font-size: 10px; font-weight: 500; }
 
 /* ── TIMELINE ────────────────────────────────────────────────────────── */
-#timeline {
-  grid-column: 1 / -1;
-  background: var(--bg-1);
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-}
-
-#tl-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--border);
-  height: 36px;
-  flex-shrink: 0;
-}
-
-#tl-info {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-left: 6px;
-  font-family: 'Cascadia Code', 'Consolas', monospace;
-}
-
-.tl-zoom-wrap {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 3px 9px;
-}
+#timeline { grid-column: 1 / -1; grid-row: 3; background: var(--bg-1); border-top: 1px solid var(--border); display: flex; flex-direction: column; }
+#tl-toolbar { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-bottom: 1px solid var(--border); height: 36px; flex-shrink: 0; }
+#tl-info { font-size: 11px; color: var(--text-3); margin-left: 6px; font-family: 'Cascadia Code', 'Consolas', monospace; }
+.tl-zoom-wrap { margin-left: auto; display: flex; align-items: center; gap: 7px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px 9px; }
 .tl-zoom-label { font-size: 10px; color: var(--text-3); }
 #tl-zoom-sl { width: 70px; accent-color: var(--accent); cursor: pointer; }
-
-#tl-body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-#tl-labels {
-  width: 72px;
-  border-right: 1px solid var(--border);
-  font-size: 10px;
-  color: var(--text-3);
-  flex-shrink: 0;
-  background: var(--bg-2);
-}
+#tl-body { flex: 1; display: flex; overflow: hidden; }
+#tl-labels { width: 72px; border-right: 1px solid var(--border); font-size: 10px; color: var(--text-3); flex-shrink: 0; background: var(--bg-2); }
 #tl-labels div { display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--border); }
 #tl-labels .ruler-label { height: 20px; }
 #tl-labels .track-label { height: 36px; font-weight: 500; letter-spacing: 0.3px; }
-
-#tl-scroll {
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-  position: relative;
-  cursor: crosshair;
-}
+#tl-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; cursor: crosshair; }
 #tl-scroll::-webkit-scrollbar { height: 5px; }
 #tl-scroll::-webkit-scrollbar-track { background: var(--bg-base); }
 #tl-scroll::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 3px; }
-
 #tl-inner { position: relative; min-width: 100%; }
-
-#tl-ruler {
-  height: 20px;
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  background: var(--bg-2);
-}
+#tl-ruler { height: 20px; border-bottom: 1px solid var(--border); position: relative; background: var(--bg-2); cursor: col-resize; }
 .tl-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
 .tl-tick-label { position: absolute; top: 3px; font-size: 9px; color: var(--text-3); transform: translateX(-50%); font-family: 'Cascadia Code', 'Consolas', monospace; }
-
 #tl-video-track, #tl-video-track-2 { height: 36px; border-bottom: 1px solid var(--border); position: relative; background: var(--bg-base); }
 #tl-audio-track, #tl-audio-track-2 { height: 36px; border-bottom: 1px solid var(--border); position: relative; background: #0a0d0a; }
 #tl-audio-track-2 { border-bottom: none; }
-
-.tl-clip {
-  position: absolute;
-  top: 4px; bottom: 4px;
-  border-radius: 5px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  cursor: grab;
-  user-select: none;
-  transition: box-shadow 0.12s;
-}
+.tl-clip { position: absolute; top: 4px; bottom: 4px; border-radius: 5px; display: flex; align-items: center; overflow: hidden; cursor: grab; user-select: none; transition: box-shadow 0.12s; }
 .tl-clip:hover { box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }
 .tl-clip:active { cursor: grabbing; }
-
-.tl-clip.video {
-  background: linear-gradient(135deg, #1e3080, #1a2560);
-  border: 1px solid #3a50b0;
-}
-.tl-clip.audio {
-  background: linear-gradient(135deg, #133a28, #0f2d20);
-  border: 1px solid #2a6a40;
-}
-.tl-clip.selected {
-  border-color: var(--orange) !important;
-  box-shadow: 0 0 0 1px var(--orange), 0 0 8px rgba(245,166,35,0.3);
-}
-
-.tl-resize-handle {
-  flex-shrink: 0;
-  width: 7px; height: 100%;
-  background: rgba(255,255,255,0.08);
-  cursor: ew-resize;
-  z-index: 5;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.12s;
-}
+.tl-clip.video { background: linear-gradient(135deg, #1e3080, #1a2560); border: 1px solid #3a50b0; }
+.tl-clip.audio { background: linear-gradient(135deg, #133a28, #0f2d20); border: 1px solid #2a6a40; }
+.tl-clip.selected { border-color: var(--orange) !important; box-shadow: 0 0 0 1px var(--orange), 0 0 8px rgba(245,166,35,0.3); }
+.tl-resize-handle { flex-shrink: 0; width: 7px; height: 100%; background: rgba(255,255,255,0.08); cursor: ew-resize; z-index: 5; display: flex; align-items: center; justify-content: center; transition: background 0.12s; }
 .tl-resize-handle:hover { background: rgba(255,255,255,0.2); }
-.tl-resize-handle::after {
-  content: '⋮';
-  font-size: 9px;
-  color: rgba(255,255,255,0.4);
-  pointer-events: none;
-}
-.tl-clip-label {
-  flex: 1;
-  font-size: 10px;
-  color: rgba(255,255,255,0.8);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0 4px;
-  pointer-events: none;
-  font-weight: 500;
-}
-
-#tl-playhead {
-  position: absolute; top: 0; bottom: 0;
-  width: 2px;
-  background: var(--accent);
-  pointer-events: none;
-  z-index: 20;
-  box-shadow: 0 0 6px var(--accent-glow);
-}
-#tl-playhead::before {
-  content: '';
-  position: absolute;
-  top: 0; left: -5px;
-  width: 12px; height: 9px;
-  background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-  box-shadow: 0 0 6px var(--accent-glow);
-}
+.tl-resize-handle::after { content: '⋮'; font-size: 9px; color: rgba(255,255,255,0.4); pointer-events: none; }
+.tl-clip-label { flex: 1; font-size: 10px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; pointer-events: none; font-weight: 500; }
+#tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; z-index: 20; box-shadow: 0 0 6px var(--accent-glow); cursor: col-resize; }
+#tl-playhead::before { content: ''; position: absolute; top: 0; left: -5px; width: 12px; height: 9px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 50% 100%); box-shadow: 0 0 6px var(--accent-glow); cursor: col-resize; }
 
 /* ── EXPORT OVERLAY ───────────────────────────────────────────────────── */
-#export-overlay {
-  display: none;
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.8);
-  backdrop-filter: blur(6px);
-  align-items: center; justify-content: center;
-  z-index: 200;
-}
-#export-box {
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 32px 40px;
-  min-width: 320px;
-  text-align: center;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
+#export-overlay { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(6px); align-items: center; justify-content: center; z-index: 200; }
+#export-box { background: var(--bg-2); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 32px 40px; min-width: 320px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
 #export-box h3 { margin-bottom: 6px; font-size: 15px; color: var(--text-1); font-weight: 600; }
 #export-box p { font-size: 12px; color: var(--text-3); margin-bottom: 18px; }
-#export-bar-wrap {
-  background: var(--bg-4);
-  border-radius: 4px; height: 6px;
-  margin-bottom: 10px; overflow: hidden;
-}
-#export-bar {
-  background: linear-gradient(90deg, var(--accent), #8090ff);
-  height: 100%; border-radius: 4px; width: 0;
-  transition: width 0.3s;
-  box-shadow: 0 0 8px var(--accent-glow);
-}
+#export-bar-wrap { background: var(--bg-4); border-radius: 4px; height: 6px; margin-bottom: 10px; overflow: hidden; }
+#export-bar { background: linear-gradient(90deg, var(--accent), #8090ff); height: 100%; border-radius: 4px; width: 0; transition: width 0.3s; box-shadow: 0 0 8px var(--accent-glow); }
 #export-pct { font-size: 13px; color: var(--text-2); font-family: 'Cascadia Code', 'Consolas', monospace; }
-
 
 .tl-clip.dragging { opacity: 0.6; cursor: grabbing !important; z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 .track-hover { background: rgba(91,110,248,0.08) !important; outline: 1px dashed var(--accent); }
 #tl-video-track, #tl-video-track-2, #tl-audio-track, #tl-audio-track-2 { transition: background 0.1s; }
 .tl-clip { transition: opacity 0.1s, box-shadow 0.1s; }
 .track-empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 10px; color: var(--text-3); pointer-events: none; white-space: nowrap; opacity: 0; transition: opacity 0.2s; }
-#tl-video-track:empty .track-empty-hint, #tl-video-track-2:empty .track-empty-hint,
-#tl-audio-track:empty .track-empty-hint, #tl-audio-track-2:empty .track-empty-hint { opacity: 1; }
-
-
-#tl-ruler { cursor: col-resize; }
-#tl-playhead { cursor: col-resize; }
-#tl-playhead::before { cursor: col-resize; }
-.playhead-dragging * { cursor: col-resize !important; }
-
-
-/* Library drag */
 .media-item { cursor: grab; }
 .media-item:active { cursor: grabbing; }
-
-.lib-drag-ghost {
-  position: fixed;
-  z-index: 9999;
-  pointer-events: none;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 5px 10px;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0.92;
-  transform: rotate(-2deg);
-}
-
-/* Track drop target highlight */
-.track-drop-target {
-  background: rgba(91,110,248,0.15) !important;
-  outline: 2px dashed var(--accent) !important;
-  outline-offset: -2px;
-}
-
-/* ── SCROLLBARS GLOBAL ───────────────────────────────────────────────── */
+.lib-drag-ghost { position: fixed; z-index: 9999; pointer-events: none; background: var(--accent); color: #fff; font-size: 11px; font-weight: 500; padding: 5px 10px; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; opacity: 0.92; transform: rotate(-2deg); }
+.track-drop-target { background: rgba(91,110,248,0.15) !important; outline: 2px dashed var(--accent) !important; outline-offset: -2px; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+
+/* ── TRANSITION BUTTONS ──────────────────────────────────────────────── */
+.tl-transition-btn { position: absolute; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; background: var(--bg-3); border: 1.5px solid var(--border-light); border-radius: 50%; color: var(--text-3); font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; transition: all 0.15s; line-height: 1; font-weight: 600; }
+.tl-transition-btn:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); transform: translateY(-50%) scale(1.15); box-shadow: 0 0 8px var(--accent-glow); }
+.tl-transition-btn.has-transition { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+.tl-transition-btn.has-transition:hover { transform: translateY(-50%) scale(1.2); }
+
+/* ── MARCADORES DE LOOP ──────────────────────────────────────────────── */
+.tl-marker { position: absolute; top: 0; bottom: 0; z-index: 15; pointer-events: none; }
+.tl-marker-line { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--green); box-shadow: 0 0 6px rgba(62,207,110,0.5); pointer-events: none; }
+.tl-marker-head { position: absolute; top: 0; left: -10px; background: var(--green); border-radius: 4px 4px 4px 0; padding: 2px 5px 2px 4px; display: flex; align-items: center; gap: 3px; cursor: grab; pointer-events: all; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.4); transition: transform 0.1s; user-select: none; }
+.tl-marker-head:hover { transform: scale(1.08); }
+.tl-marker-head:active { cursor: grabbing; }
+.tl-marker-icon { font-size: 11px; color: #fff; font-weight: 700; }
+.tl-marker-label { font-size: 9px; color: rgba(255,255,255,0.9); font-family: 'Cascadia Code', 'Consolas', monospace; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -728,12 +311,8 @@ body {
     <span class="logo-text">VideoEdit</span>
   </div>
   <div class="sep"></div>
-  <button class="tbtn" id="btn-undo" title="Deshacer (Ctrl+Z)" disabled>
-    <span class="tbtn-icon">↩</span> Deshacer
-  </button>
-  <button class="tbtn" id="btn-redo" title="Rehacer (Ctrl+Y)" disabled>
-    <span class="tbtn-icon">↪</span> Rehacer
-  </button>
+  <button class="tbtn" id="btn-undo" title="Deshacer (Ctrl+Z)" disabled><span class="tbtn-icon">↩</span> Deshacer</button>
+  <button class="tbtn" id="btn-redo" title="Rehacer (Ctrl+Y)" disabled><span class="tbtn-icon">↪</span> Rehacer</button>
   <div class="sep"></div>
   <button class="tbtn" id="btn-import"><span class="tbtn-icon">+</span> Importar</button>
   <button class="tbtn" id="btn-add-timeline"><span class="tbtn-icon">↓</span> Al timeline</button>
@@ -745,17 +324,87 @@ body {
   <span id="status">Importa videos o imágenes para comenzar</span>
 </div>
 
-<!-- LEFT PANEL: MEDIA LIBRARY -->
+<!-- LEFT ICON RAIL -->
+<div id="left-rail">
+  <button class="rail-btn active" data-panel="media" title="Media"><span class="rail-icon">🎬</span><span class="rail-label">Media</span></button>
+  <button class="rail-btn" data-panel="audio" title="Audio"><span class="rail-icon">🎵</span><span class="rail-label">Audio</span></button>
+  <button class="rail-btn" data-panel="text" title="Texto"><span class="rail-icon">Tt</span><span class="rail-label">Texto</span></button>
+  <button class="rail-btn" data-panel="stickers" title="Stickers"><span class="rail-icon">✨</span><span class="rail-label">Sticker</span></button>
+  <button class="rail-btn" data-panel="effects" title="Efectos"><span class="rail-icon">⚡</span><span class="rail-label">Efectos</span></button>
+  <button class="rail-btn" data-panel="transitions" title="Transiciones"><span class="rail-icon">⇄</span><span class="rail-label">Transic.</span></button>
+  <button class="rail-btn" data-panel="filters" title="Filtros"><span class="rail-icon">🎨</span><span class="rail-label">Filtros</span></button>
+  <button class="rail-btn" data-panel="adjust" title="Ajuste"><span class="rail-icon">⚙</span><span class="rail-label">Ajuste</span></button>
+</div>
+
+<!-- LEFT CONTENT PANEL -->
 <div id="media-panel">
-  <div class="panel-header">
-    <span class="panel-title">Librería</span>
-    <span class="panel-count" id="media-count">0</span>
-  </div>
-  <div id="media-list">
-    <div class="empty-hint">
-      <div class="empty-icon">🎬</div>
-      Importa archivos con<br>el botón de arriba.<br>Doble clic para agregar<br>al timeline.
+  <div class="lpanel" id="lpanel-media">
+    <div class="panel-header">
+      <span class="panel-title">Librería</span>
+      <span class="panel-count" id="media-count">0</span>
     </div>
+    <div id="media-list">
+      <div class="empty-hint"><div class="empty-icon">🎬</div>Importa archivos con<br>el botón de arriba.<br>Arrastra al timeline<br>o doble clic para agregar.</div>
+    </div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-audio" style="display:none">
+    <div class="panel-header"><span class="panel-title">Audio</span></div>
+    <div class="placeholder-grid">
+      <div class="ph-item">🎵<span>Lo-Fi Beats</span></div><div class="ph-item">🎶<span>Cinematic</span></div>
+      <div class="ph-item">🥁<span>Hip Hop</span></div><div class="ph-item">🎸<span>Rock</span></div>
+      <div class="ph-item">🎹<span>Piano</span></div><div class="ph-item">🎷<span>Jazz</span></div>
+    </div>
+    <div class="ph-coming">Próximamente</div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-text" style="display:none">
+    <div class="panel-header"><span class="panel-title">Texto</span></div>
+    <div class="placeholder-grid">
+      <div class="ph-text-item" style="font-size:15px;font-weight:700">Título</div>
+      <div class="ph-text-item" style="font-size:12px">Subtítulo</div>
+      <div class="ph-text-item" style="font-style:italic">Cursiva</div>
+      <div class="ph-text-item" style="letter-spacing:3px;font-size:10px">ESPACIADO</div>
+      <div class="ph-text-item" style="text-shadow:0 0 8px #5b6ef8">Neón</div>
+      <div class="ph-text-item" style="font-size:20px">Credits</div>
+    </div>
+    <div class="ph-coming">Próximamente</div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-stickers" style="display:none">
+    <div class="panel-header"><span class="panel-title">Stickers</span></div>
+    <div class="placeholder-grid sticker-grid">
+      <div class="ph-sticker">❤️</div><div class="ph-sticker">⭐</div><div class="ph-sticker">🔥</div>
+      <div class="ph-sticker">💫</div><div class="ph-sticker">🎉</div><div class="ph-sticker">💥</div>
+      <div class="ph-sticker">✅</div><div class="ph-sticker">🎯</div><div class="ph-sticker">🌟</div>
+    </div>
+    <div class="ph-coming">Próximamente</div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-effects" style="display:none">
+    <div class="panel-header"><span class="panel-title">Efectos</span></div>
+    <div class="placeholder-grid">
+      <div class="ph-effect">Glitch</div><div class="ph-effect">Shake</div><div class="ph-effect">Zoom</div>
+      <div class="ph-effect">Flash</div><div class="ph-effect">Blur</div><div class="ph-effect">Fade</div>
+      <div class="ph-effect">Neon</div><div class="ph-effect">VHS</div><div class="ph-effect">Film</div>
+    </div>
+    <div class="ph-coming">Próximamente</div>
+  </div>
+  <div class="lpanel" id="lpanel-transitions" style="display:none">
+    <div class="panel-header" style="flex-shrink:0"><span class="panel-title">Transiciones</span></div>
+    <div style="padding:24px 16px;text-align:center;color:var(--text-3);font-size:12px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+      <div style="font-size:32px;opacity:0.3">⇄</div>
+      <div>Haz clic en el botón <strong style="color:var(--accent)">+</strong> entre dos clips<br>en el timeline para agregar una transición</div>
+    </div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-filters" style="display:none">
+    <div class="panel-header"><span class="panel-title">Filtros</span></div>
+    <div class="placeholder-grid">
+      <div class="ph-filter" style="filter:none">Original</div><div class="ph-filter" style="filter:grayscale(1)">B&N</div>
+      <div class="ph-filter" style="filter:sepia(0.8)">Sepia</div><div class="ph-filter" style="filter:contrast(1.5)">Vívido</div>
+      <div class="ph-filter" style="filter:brightness(1.3)">Suave</div><div class="ph-filter" style="filter:hue-rotate(180deg)">Neón</div>
+    </div>
+    <div class="ph-coming">Próximamente</div>
+  </div>
+  <div class="lpanel lpanel-placeholder" id="lpanel-adjust" style="display:none">
+    <div class="panel-header"><span class="panel-title">Ajuste</span></div>
+    <div class="ph-coming" style="margin-top:40px">Próximamente</div>
   </div>
 </div>
 
@@ -763,10 +412,7 @@ body {
 <div id="player-area">
   <div id="player-wrap">
     <video id="main-video" playsinline></video>
-    <div id="no-video">
-      <div class="no-video-icon">▶</div>
-      Selecciona un clip<br>o agrégalo al timeline
-    </div>
+    <div id="no-video"><div class="no-video-icon">▶</div>Selecciona un clip<br>o agrégalo al timeline</div>
     <div id="export-overlay">
       <div id="export-box">
         <h3>Exportando con FFmpeg</h3>
@@ -789,11 +435,8 @@ body {
       <button class="cbtn" id="btn-fwd1s" title="+1s">▶▶</button>
       <button class="cbtn" id="mute-btn" title="Silenciar">🔊</button>
       <select class="ctrl-sel" id="speed-select">
-        <option value="0.25">0.25×</option>
-        <option value="0.5">0.5×</option>
-        <option value="1" selected>1×</option>
-        <option value="1.5">1.5×</option>
-        <option value="2">2×</option>
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
       </select>
       <div class="time-block">
         <span id="time-display">0:00 / 0:00</span>
@@ -811,123 +454,59 @@ body {
     <button class="props-tab" data-tab="color">Color</button>
     <button class="props-tab" data-tab="filters">Filtros</button>
   </div>
-
   <div id="clip-indicator" style="padding:6px 12px;background:var(--bg-2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-3);display:none;align-items:center;gap:6px">
     <span style="color:var(--accent)">●</span>
     <span id="clip-indicator-name">Sin clip seleccionado</span>
   </div>
-
-  <!-- TAB: Video -->
   <div class="props-body" id="tab-video">
     <div class="prop-section">
       <div class="prop-section-title">Recorte</div>
-      <div class="prop-row">
-        <span class="prop-label">Inicio</span>
-        <input type="range" id="trim-s" min="0" max="100" value="0" step="0.1">
-        <span class="prop-val" id="trim-s-v">0s</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Fin</span>
-        <input type="range" id="trim-e" min="0" max="100" value="100" step="0.1">
-        <span class="prop-val" id="trim-e-v">0s</span>
-      </div>
+      <div class="prop-row"><span class="prop-label">Inicio</span><input type="range" id="trim-s" min="0" max="100" value="0" step="0.1"><span class="prop-val" id="trim-s-v">0s</span></div>
+      <div class="prop-row"><span class="prop-label">Fin</span><input type="range" id="trim-e" min="0" max="100" value="100" step="0.1"><span class="prop-val" id="trim-e-v">0s</span></div>
     </div>
     <div class="prop-section">
       <div class="prop-section-title">Transformar</div>
-      <div class="prop-row">
-        <span class="prop-label">Rotación</span>
-        <input type="range" id="rot-sl" min="-180" max="180" value="0" step="1">
-        <span class="prop-val" id="rot-v">0°</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Zoom</span>
-        <input type="range" id="zoom-sl" min="50" max="200" value="100" step="1">
-        <span class="prop-val" id="zoom-v">100%</span>
-      </div>
+      <div class="prop-row"><span class="prop-label">Rotación</span><input type="range" id="rot-sl" min="-180" max="180" value="0" step="1"><span class="prop-val" id="rot-v">0°</span></div>
+      <div class="prop-row"><span class="prop-label">Zoom</span><input type="range" id="zoom-sl" min="50" max="200" value="100" step="1"><span class="prop-val" id="zoom-v">100%</span></div>
       <div class="prop-btns" style="margin-top:4px">
         <button class="pbtn" id="flip-h-btn">↔ Horizontal</button>
         <button class="pbtn" id="flip-v-btn">↕ Vertical</button>
       </div>
     </div>
   </div>
-
-  <!-- TAB: Speed -->
   <div class="props-body" id="tab-speed" style="display:none">
     <div class="prop-section">
       <div class="prop-section-title">Velocidad de reproducción</div>
-      <div class="prop-row">
-        <input type="range" id="speed-sl" min="25" max="300" value="100" step="5">
-        <span class="prop-val" id="speed-v">1×</span>
-      </div>
+      <div class="prop-row"><input type="range" id="speed-sl" min="25" max="300" value="100" step="5"><span class="prop-val" id="speed-v">1×</span></div>
       <div class="prop-btns" style="margin-top:8px">
-        <button class="pbtn" id="btn-speed-50">0.5×</button>
-        <button class="pbtn" id="btn-speed-100">1×</button>
-        <button class="pbtn" id="btn-speed-200">2×</button>
-        <button class="pbtn" id="btn-speed-300">3×</button>
+        <button class="pbtn" id="btn-speed-50">0.5×</button><button class="pbtn" id="btn-speed-100">1×</button>
+        <button class="pbtn" id="btn-speed-200">2×</button><button class="pbtn" id="btn-speed-300">3×</button>
       </div>
     </div>
   </div>
-
-  <!-- TAB: Color -->
   <div class="props-body" id="tab-color" style="display:none">
     <div class="prop-section">
       <div class="prop-section-title">Ajustes de color</div>
-      <div class="prop-row">
-        <span class="prop-label">Brillo</span>
-        <input type="range" id="br-sl" min="-100" max="100" value="0" step="1">
-        <span class="prop-val" id="br-v">0</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Contraste</span>
-        <input type="range" id="ct-sl" min="-100" max="100" value="0" step="1">
-        <span class="prop-val" id="ct-v">0</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Saturación</span>
-        <input type="range" id="sat-sl" min="-100" max="100" value="0" step="1">
-        <span class="prop-val" id="sat-v">0</span>
-      </div>
+      <div class="prop-row"><span class="prop-label">Brillo</span><input type="range" id="br-sl" min="-100" max="100" value="0" step="1"><span class="prop-val" id="br-v">0</span></div>
+      <div class="prop-row"><span class="prop-label">Contraste</span><input type="range" id="ct-sl" min="-100" max="100" value="0" step="1"><span class="prop-val" id="ct-v">0</span></div>
+      <div class="prop-row"><span class="prop-label">Saturación</span><input type="range" id="sat-sl" min="-100" max="100" value="0" step="1"><span class="prop-val" id="sat-v">0</span></div>
     </div>
   </div>
-
-  <!-- TAB: Filters -->
   <div class="props-body" id="tab-filters" style="display:none">
     <div class="prop-section">
       <div class="prop-section-title">Filtros visuales</div>
       <div class="filter-grid" id="filter-btns">
-        <button class="filter-btn on" data-filter="">
-          <div class="filter-preview">🎬</div>
-          <div class="filter-name">Original</div>
-        </button>
-        <button class="filter-btn" data-filter="grayscale(1)">
-          <div class="filter-preview" style="filter:grayscale(1)">🎬</div>
-          <div class="filter-name">B&N</div>
-        </button>
-        <button class="filter-btn" data-filter="sepia(0.8)">
-          <div class="filter-preview" style="filter:sepia(0.8)">🎬</div>
-          <div class="filter-name">Sepia</div>
-        </button>
-        <button class="filter-btn" data-filter="contrast(1.5) saturate(1.5)">
-          <div class="filter-preview" style="filter:contrast(1.5) saturate(1.5)">🎬</div>
-          <div class="filter-name">Vívido</div>
-        </button>
-        <button class="filter-btn" data-filter="brightness(1.3) contrast(0.9)">
-          <div class="filter-preview" style="filter:brightness(1.3) contrast(0.9)">🎬</div>
-          <div class="filter-name">Suave</div>
-        </button>
-        <button class="filter-btn" data-filter="hue-rotate(180deg)">
-          <div class="filter-preview" style="filter:hue-rotate(180deg)">🎬</div>
-          <div class="filter-name">Neón</div>
-        </button>
+        <button class="filter-btn on" data-filter=""><div class="filter-preview">🎬</div><div class="filter-name">Original</div></button>
+        <button class="filter-btn" data-filter="grayscale(1)"><div class="filter-preview" style="filter:grayscale(1)">🎬</div><div class="filter-name">B&N</div></button>
+        <button class="filter-btn" data-filter="sepia(0.8)"><div class="filter-preview" style="filter:sepia(0.8)">🎬</div><div class="filter-name">Sepia</div></button>
+        <button class="filter-btn" data-filter="contrast(1.5) saturate(1.5)"><div class="filter-preview" style="filter:contrast(1.5) saturate(1.5)">🎬</div><div class="filter-name">Vívido</div></button>
+        <button class="filter-btn" data-filter="brightness(1.3) contrast(0.9)"><div class="filter-preview" style="filter:brightness(1.3) contrast(0.9)">🎬</div><div class="filter-name">Suave</div></button>
+        <button class="filter-btn" data-filter="hue-rotate(180deg)"><div class="filter-preview" style="filter:hue-rotate(180deg)">🎬</div><div class="filter-name">Neón</div></button>
       </div>
     </div>
   </div>
-
-  <!-- Apply to all -->
   <div style="padding:10px 12px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0">
-    <button class="tbtn" id="btn-apply-all" style="width:100%;justify-content:center;gap:6px">
-      <span>⚡</span> Aplicar a todos los clips
-    </button>
+    <button class="tbtn" id="btn-apply-all" style="width:100%;justify-content:center;gap:6px"><span>⚡</span> Aplicar a todos los clips</button>
   </div>
 </div>
 
@@ -936,6 +515,8 @@ body {
   <div id="tl-toolbar">
     <button class="tbtn" id="btn-split-tl"><span class="tbtn-icon">⟨⟩</span> Dividir</button>
     <button class="tbtn danger" id="btn-delete-tl"><span class="tbtn-icon">✕</span> Eliminar</button>
+    <button class="tbtn" id="btn-add-marker" title="Agregar marcador (clic derecho en ruler para agregar/quitar)"><span class="tbtn-icon">↺</span> Marcador</button>
+    <button class="tbtn danger" id="btn-clear-markers" title="Eliminar todos los marcadores" style="display:none"><span class="tbtn-icon">✕</span> Marcadores</button>
     <span id="tl-info">Sin clips en el timeline</span>
     <div class="tl-zoom-wrap">
       <span class="tl-zoom-label">Zoom</span>
@@ -964,6 +545,5 @@ body {
 </div>
 
 <script src="renderer.js"></script>
-
 </body>
 </html>

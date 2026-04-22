@@ -18,6 +18,54 @@ let isPlayingQueue = false
 let drag = null
 let libraryDrag = null  // drag from library to timeline
 
+// ── Marcadores de Loop ─────────────────────────────────────────────────────────
+// markers = array de { id, time } — al llegar a ese tiempo vuelve al segundo 0
+let markers = []
+let markerDrag = null  // drag state para mover marcadores
+
+// ── Sistema de Transiciones ────────────────────────────────────────────────────
+// transitions[clipId] = { type, duration } → transición ANTES de ese clip
+let transitions = {}
+let activeTransitionAnim = null  // animación en curso
+
+const TRANSITION_CATEGORIES = {
+  'Básico': [
+    { id: 'fade',       name: 'Fade',        icon: '◼' },
+    { id: 'fadeblack',  name: 'Negro',       icon: '⬛' },
+    { id: 'fadewhite',  name: 'Blanco',      icon: '⬜' },
+    { id: 'flash',      name: 'Flash',       icon: '⚡' },
+  ],
+  'Movimiento': [
+    { id: 'slideleft',  name: 'Slide ←',     icon: '←' },
+    { id: 'slideright', name: 'Slide →',     icon: '→' },
+    { id: 'slideup',    name: 'Slide ↑',     icon: '↑' },
+    { id: 'slidedown',  name: 'Slide ↓',     icon: '↓' },
+    { id: 'wipeleft',   name: 'Wipe ←',      icon: '⬅' },
+    { id: 'wiperight',  name: 'Wipe →',      icon: '➡' },
+    { id: 'wipeup',     name: 'Wipe ↑',      icon: '⬆' },
+    { id: 'wipedown',   name: 'Wipe ↓',      icon: '⬇' },
+  ],
+  'Zoom': [
+    { id: 'zoomin',     name: 'Zoom In',     icon: '🔍' },
+    { id: 'zoomout',    name: 'Zoom Out',    icon: '🔎' },
+    { id: 'zoomfade',   name: 'Zoom Fade',   icon: '💫' },
+  ],
+  'Distorsión': [
+    { id: 'blur',       name: 'Blur',        icon: '🌫' },
+    { id: 'glitch',     name: 'Glitch',      icon: '📺' },
+    { id: 'pixelize',   name: 'Pixelize',    icon: '🟦' },
+    { id: 'spin',       name: 'Spin',        icon: '🌀' },
+  ],
+  'Luz': [
+    { id: 'dissolve',   name: 'Disolver',    icon: '✨' },
+    { id: 'radial',     name: 'Radial',      icon: '☀' },
+    { id: 'circlecrop', name: 'Círculo',     icon: '⭕' },
+  ],
+}
+
+// Transición actualmente seleccionada en el panel
+let panelSelectedTransitionClipId = null
+
 
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
 const undoStack = []
@@ -355,6 +403,100 @@ function makeAudioClipEl(c) {
   return div
 }
 
+// ── Marcadores ────────────────────────────────────────────────────────────────
+function addMarkerAtPlayhead() {
+  const t = getPlayheadTime()
+  if (t <= 0) { setStatus('Mueve el playhead a donde quieres el marcador'); return }
+  // Evitar duplicados muy cercanos
+  const nearby = markers.find(m => Math.abs(m.time - t) < 0.2)
+  if (nearby) { setStatus('Ya hay un marcador en esa posición'); return }
+  markers.push({ id: Date.now(), time: t })
+  markers.sort((a, b) => a.time - b.time)
+  renderMarkers()
+  setStatus(`Marcador de loop agregado en ${fmt(t)}`)
+}
+
+function removeMarker(id) {
+  markers = markers.filter(m => m.id !== id)
+  renderMarkers()
+  setStatus('Marcador eliminado')
+}
+
+function clearAllMarkers() {
+  markers = []
+  renderMarkers()
+  setStatus('Marcadores eliminados')
+}
+
+function renderMarkers() {
+  // Eliminar marcadores anteriores del DOM
+  document.querySelectorAll('.tl-marker').forEach(el => el.remove())
+
+  const inner = document.getElementById('tl-inner')
+  if (!inner) return
+
+  markers.forEach(m => {
+    const x = m.time * tlZoom
+    const el = document.createElement('div')
+    el.className = 'tl-marker'
+    el.style.left = x + 'px'
+    el.dataset.id = m.id
+    el.title = `Loop → 0:00 en ${fmt(m.time)}\nClic derecho para eliminar`
+
+    // Línea vertical
+    const line = document.createElement('div')
+    line.className = 'tl-marker-line'
+
+    // Cabeza del marcador (triángulo + etiqueta)
+    const head = document.createElement('div')
+    head.className = 'tl-marker-head'
+    head.innerHTML = `<span class="tl-marker-icon">↺</span><span class="tl-marker-label">${fmt(m.time)}</span>`
+
+    el.appendChild(head)
+    el.appendChild(line)
+    inner.appendChild(el)
+
+    // Drag para mover el marcador
+    head.addEventListener('mousedown', e => {
+      if (e.button !== 0) return
+      e.stopPropagation()
+      markerDrag = { id: m.id, startX: e.clientX, origTime: m.time }
+    })
+
+    // Clic derecho para eliminar
+    el.addEventListener('contextmenu', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      removeMarker(m.id)
+    })
+  })
+}
+
+// Actualizar posición visual de marcadores cuando cambia el zoom
+function updateMarkerPositions() {
+  markers.forEach(m => {
+    const el = document.querySelector(`.tl-marker[data-id="${m.id}"]`)
+    if (el) el.style.left = (m.time * tlZoom) + 'px'
+  })
+}
+
+// Checar si el playhead pasó por un marcador durante la reproducción
+function checkMarkersAt(globalT) {
+  for (const m of markers) {
+    if (Math.abs(globalT - m.time) < 0.15) {
+      // Volver al inicio del clip que se está reproduciendo ahora
+      const currentClip = playQueue[playQueueIndex]
+      if (!currentClip) return false
+      console.log(`[markers] loop en ${fmt(m.time)} → inicio de "${currentClip.name}"`)
+      vid.pause()
+      seekToTime(currentClip.tlStart)
+      setTimeout(() => togglePlay(), 80)
+      return true
+    }
+  }
+  return false
+}
+
 function renderTimeline() {
   const totalDur = clips.reduce((a, c) => Math.max(a, c.tlStart + c.tlDuration), 10)
   const scrollEl = document.getElementById('tl-scroll')
@@ -377,23 +519,25 @@ function renderTimeline() {
   at.style.width = w + 'px'
   document.getElementById('tl-inner').style.width = w + 'px'
 
-
   // Clear all tracks
   const vt2 = document.getElementById('tl-video-track-2')
   const at2 = document.getElementById('tl-audio-track-2')
   vt.innerHTML = ''; if (vt2) vt2.innerHTML = ''
   at.innerHTML = ''; if (at2) at2.innerHTML = ''
 
+  // Sort track-0 clips by tlStart to insert transition buttons between consecutive ones
+  const track0Clips = clips
+    .filter(c => (c.track || 0) === 0)
+    .sort((a, b) => a.tlStart - b.tlStart)
+
   clips.forEach(c => {
     const trackIdx = c.track || 0
     const audioTrackIdx = c.audioTrack || 0
 
-    // Video element
     const vEl = makeVideoClipEl(c)
     if (trackIdx === 1 && vt2) vt2.appendChild(vEl)
     else vt.appendChild(vEl)
 
-    // Audio element
     if (!c.isImage) {
       const aEl = makeAudioClipEl(c)
       if (audioTrackIdx === 1 && at2) at2.appendChild(aEl)
@@ -401,8 +545,291 @@ function renderTimeline() {
     }
   })
 
+  // Add transition buttons between consecutive track-0 clips
+  for (let i = 1; i < track0Clips.length; i++) {
+    const prev = track0Clips[i - 1]
+    const curr = track0Clips[i]
+    const gap = curr.tlStart - (prev.tlStart + prev.tlDuration)
+    // Only add button if clips are adjacent (gap < 0.5s)
+    if (Math.abs(gap) < 0.5) {
+      const junctionX = curr.tlStart * tlZoom
+      const btn = document.createElement('div')
+      btn.className = 'tl-transition-btn' + (transitions[curr.id] ? ' has-transition' : '')
+      btn.style.left = (junctionX - 11) + 'px'
+      btn.title = transitions[curr.id] ? `Transición: ${transitions[curr.id].type}` : 'Agregar transición'
+      btn.dataset.clipId = curr.id
+      btn.innerHTML = transitions[curr.id] ? '⇄' : '+'
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        openTransitionPanel(curr.id)
+      })
+      vt.appendChild(btn)
+    }
+  }
+
   document.getElementById('tl-info').textContent =
     clips.length ? `${clips.length} clip(s) · ${fmt(totalDur)}` : 'Sin clips'
+
+  renderMarkers()
+}
+
+// ── Panel de transiciones ──────────────────────────────────────────────────────
+function openTransitionPanel(clipId) {
+  panelSelectedTransitionClipId = clipId
+
+  // Switch left rail to transitions panel
+  document.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll('.lpanel').forEach(p => p.style.display = 'none')
+  const railBtn = document.querySelector('.rail-btn[data-panel="transitions"]')
+  if (railBtn) railBtn.classList.add('active')
+
+  renderTransitionsPanel(clipId)
+  const panel = document.getElementById('lpanel-transitions')
+  if (panel) panel.style.display = 'flex'
+}
+
+function renderTransitionsPanel(clipId) {
+  const panel = document.getElementById('lpanel-transitions')
+  if (!panel) return
+
+  const current = transitions[clipId] || null
+
+  let html = `
+    <div class="panel-header" style="flex-shrink:0">
+      <span class="panel-title">Transiciones</span>
+      ${current ? `<button id="btn-remove-transition" style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;font-family:inherit">✕ Quitar</button>` : ''}
+    </div>
+  `
+
+  if (current) {
+    html += `
+      <div style="padding:10px 12px;background:var(--bg-2);border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.8px">Transición activa</div>
+        <div style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:10px">${current.type}</div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">Duración: <span style="color:var(--text-2);font-family:monospace">${current.duration.toFixed(1)}s</span></div>
+        <input type="range" id="tr-duration-sl" min="1" max="15" value="${Math.round(current.duration * 10)}" step="1"
+          style="width:100%;accent-color:var(--accent);cursor:pointer">
+      </div>
+    `
+  }
+
+  html += `<div style="flex:1;overflow-y:auto;padding:8px">`
+
+  for (const [cat, items] of Object.entries(TRANSITION_CATEGORIES)) {
+    html += `<div style="font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.8px;margin:8px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)">${cat}</div>`
+    html += `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-bottom:4px">`
+    for (const tr of items) {
+      const isActive = current && current.type === tr.id
+      html += `
+        <div class="tr-item${isActive ? ' tr-active' : ''}" data-tr="${tr.id}" data-clip="${clipId}"
+          style="background:var(--bg-3);border:1.5px solid ${isActive ? 'var(--accent)' : 'var(--border)'};border-radius:6px;padding:8px 6px;cursor:pointer;text-align:center;transition:all 0.12s">
+          <div style="font-size:18px;margin-bottom:3px">${tr.icon}</div>
+          <div style="font-size:10px;color:${isActive ? 'var(--accent)' : 'var(--text-2)'};font-weight:500">${tr.name}</div>
+        </div>
+      `
+    }
+    html += `</div>`
+  }
+
+  html += `</div>`
+
+  if (!current) {
+    html += `<div style="padding:8px 12px;border-top:1px solid var(--border);flex-shrink:0;font-size:10px;color:var(--text-3);text-align:center">Haz clic en una transición para aplicarla</div>`
+  }
+
+  panel.innerHTML = html
+
+  // Events
+  panel.querySelectorAll('.tr-item').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      if (!el.classList.contains('tr-active')) el.style.background = 'var(--bg-4)'
+    })
+    el.addEventListener('mouseleave', () => {
+      if (!el.classList.contains('tr-active')) el.style.background = 'var(--bg-3)'
+    })
+    el.addEventListener('click', () => {
+      const trType = el.dataset.tr
+      const cId = parseInt(el.dataset.clip)
+      const dur = transitions[cId] ? transitions[cId].duration : 0.5
+      applyTransition(cId, trType, dur)
+    })
+  })
+
+  const durSlider = panel.querySelector('#tr-duration-sl')
+  if (durSlider) {
+    durSlider.addEventListener('input', e => {
+      const dur = parseInt(e.target.value) / 10
+      if (transitions[clipId]) {
+        transitions[clipId].duration = dur
+        panel.querySelector('span[style*="monospace"]').textContent = dur.toFixed(1) + 's'
+      }
+    })
+  }
+
+  const removeBtn = panel.querySelector('#btn-remove-transition')
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      delete transitions[clipId]
+      panelSelectedTransitionClipId = null
+      renderTimeline()
+      renderTransitionsPanel(clipId)
+      setStatus('Transición eliminada')
+    })
+  }
+}
+
+function applyTransition(clipId, type, duration) {
+  transitions[clipId] = { type, duration: duration || 0.5 }
+  renderTimeline()
+  renderTransitionsPanel(clipId)
+  setStatus(`Transición "${type}" aplicada ✓`)
+}
+
+// ── Animación de transición en el preview ─────────────────────────────────────
+function playTransition(type, duration, onDone) {
+  if (activeTransitionAnim) {
+    clearInterval(activeTransitionAnim)
+    activeTransitionAnim = null
+    // Reset styles
+    vid.style.opacity = '1'
+    vid.style.transform = vid.style.transform.replace(/translate[XY]?\([^)]+\)/g, '').trim() || ''
+    vid.style.filter = vid.style.filter.replace(/blur\([^)]+\)/g, '').trim() || ''
+  }
+
+  const ms = (duration || 0.5) * 1000
+  const frames = Math.max(15, Math.round(ms / 16))
+  let frame = 0
+
+  activeTransitionAnim = setInterval(() => {
+    frame++
+    const p = frame / frames  // 0 → 1
+    const ease = 1 - Math.pow(1 - p, 3)  // ease-out cubic
+
+    switch (type) {
+      case 'fade':
+        vid.style.opacity = p.toString()
+        break
+      case 'fadeblack':
+        vid.style.opacity = p < 0.5 ? (p * 2).toString() : '1'
+        vid.style.filter = (vid.style.filter || '').replace(/brightness\([^)]+\)/g, '').trim()
+        if (p < 0.5) vid.style.filter = `brightness(${p * 2}) ` + (vid.style.filter || '')
+        break
+      case 'fadewhite':
+        vid.style.opacity = p.toString()
+        vid.style.filter = (vid.style.filter || '').replace(/brightness\([^)]+\)/g, '').trim()
+        vid.style.filter = `brightness(${2 - ease}) ` + (vid.style.filter || '')
+        break
+      case 'flash':
+        vid.style.opacity = p < 0.3 ? '0' : p.toString()
+        break
+      case 'slideleft': {
+        const tx = (1 - ease) * -100
+        vid.style.transform = (vid.style.transform || '').replace(/translateX\([^)]+\)/g, '').trim()
+        vid.style.transform = `translateX(${tx}%) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'slideright': {
+        const tx = (1 - ease) * 100
+        vid.style.transform = (vid.style.transform || '').replace(/translateX\([^)]+\)/g, '').trim()
+        vid.style.transform = `translateX(${tx}%) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'slideup': {
+        const ty = (1 - ease) * -100
+        vid.style.transform = (vid.style.transform || '').replace(/translateY\([^)]+\)/g, '').trim()
+        vid.style.transform = `translateY(${ty}%) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'slidedown': {
+        const ty = (1 - ease) * 100
+        vid.style.transform = (vid.style.transform || '').replace(/translateY\([^)]+\)/g, '').trim()
+        vid.style.transform = `translateY(${ty}%) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'wipeleft':
+      case 'wiperight':
+      case 'wipeup':
+      case 'wipedown':
+        vid.style.opacity = ease.toString()
+        break
+      case 'zoomin': {
+        const sc = 0.7 + ease * 0.3
+        vid.style.transform = (vid.style.transform || '').replace(/scale\([^)]+\)/g, '').trim()
+        vid.style.transform = `scale(${sc}) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'zoomout': {
+        const sc = 1.4 - ease * 0.4
+        vid.style.transform = (vid.style.transform || '').replace(/scale\([^)]+\)/g, '').trim()
+        vid.style.transform = `scale(${sc}) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'zoomfade':
+        vid.style.transform = (vid.style.transform || '').replace(/scale\([^)]+\)/g, '').trim()
+        vid.style.transform = `scale(${0.85 + ease * 0.15}) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      case 'blur':
+        vid.style.filter = (vid.style.filter || '').replace(/blur\([^)]+\)/g, '').trim()
+        vid.style.filter = `blur(${(1 - ease) * 20}px) ` + (vid.style.filter || '')
+        vid.style.opacity = p.toString()
+        break
+      case 'glitch':
+        if (frame % 3 === 0) {
+          const glitchX = (Math.random() - 0.5) * 20 * (1 - ease)
+          vid.style.transform = (vid.style.transform || '').replace(/translateX\([^)]+\)/g, '').trim()
+          vid.style.transform = `translateX(${glitchX}px) ` + (vid.style.transform || '')
+          vid.style.filter = (vid.style.filter || '').replace(/hue-rotate\([^)]+\)/g, '').trim()
+          vid.style.filter = `hue-rotate(${Math.random() * 360 * (1 - ease)}deg) ` + (vid.style.filter || '')
+        }
+        vid.style.opacity = p.toString()
+        break
+      case 'pixelize':
+        vid.style.opacity = p.toString()
+        break
+      case 'spin': {
+        const deg = (1 - ease) * 180
+        vid.style.transform = (vid.style.transform || '').replace(/rotate\([^)]+\)/g, '').trim()
+        vid.style.transform = `rotate(${deg}deg) ` + (vid.style.transform || '')
+        vid.style.opacity = p.toString()
+        break
+      }
+      case 'dissolve':
+        vid.style.opacity = ease.toString()
+        break
+      case 'radial':
+      case 'circlecrop':
+        vid.style.opacity = ease.toString()
+        break
+      default:
+        vid.style.opacity = p.toString()
+    }
+
+    if (frame >= frames) {
+      clearInterval(activeTransitionAnim)
+      activeTransitionAnim = null
+      // Clean up transition styles
+      vid.style.opacity = '1'
+      vid.style.transform = (vid.style.transform || '')
+        .replace(/translateX\([^)]+\)/g, '')
+        .replace(/translateY\([^)]+\)/g, '')
+        .replace(/scale\([^)]+\)/g, '')
+        .replace(/rotate\([^)]+\)/g, '')
+        .trim()
+      vid.style.filter = (vid.style.filter || '')
+        .replace(/blur\([^)]+\)/g, '')
+        .replace(/brightness\([^)]+\)/g, '')
+        .replace(/hue-rotate\([^)]+\)/g, '')
+        .trim()
+      onDone && onDone()
+    }
+  }, 16)
 }
 
 
@@ -443,6 +870,24 @@ function clipMouseDown(e, id, type) {
 }
 
 document.addEventListener('mousemove', e => {
+  // Marker drag
+  if (markerDrag) {
+    const scrollEl = document.getElementById('tl-scroll')
+    const dx = e.clientX - markerDrag.startX
+    const dt = dx / tlZoom
+    const newTime = Math.max(0.1, markerDrag.origTime + dt)
+    const marker = markers.find(m => m.id === markerDrag.id)
+    if (marker) {
+      marker.time = newTime
+      const el = document.querySelector(`.tl-marker[data-id="${marker.id}"]`)
+      if (el) {
+        el.style.left = (newTime * tlZoom) + 'px'
+        const lbl = el.querySelector('.tl-marker-label')
+        if (lbl) lbl.textContent = fmt(newTime)
+      }
+    }
+    return
+  }
   if (!drag) return
   const c = clips.find(x => x.id === drag.clipId)
   if (!c) return
@@ -476,6 +921,15 @@ document.addEventListener('mousemove', e => {
 })
 
 document.addEventListener('mouseup', e => {
+  if (markerDrag) {
+    const marker = markers.find(m => m.id === markerDrag.id)
+    if (marker) {
+      markers.sort((a, b) => a.time - b.time)
+      setStatus(`Marcador movido a ${fmt(marker.time)}`)
+    }
+    markerDrag = null
+    return
+  }
   if (!drag) return
 
   // Clear track highlights
@@ -637,6 +1091,7 @@ function setTLZoom(v, anchorT) {
   const slider = document.getElementById('tl-zoom-sl')
   if (slider) slider.value = tlZoom
   renderTimeline()
+  updateMarkerPositions()
   // Keep anchor point (e.g. mouse position) stable after zoom
   if (anchorT !== undefined) {
     const scrollEl = document.getElementById('tl-scroll')
@@ -782,7 +1237,15 @@ function playClipAt(index) {
     vid.playbackRate = parseFloat(document.getElementById('speed-sl').value) / 100
     vid.onloadedmetadata = () => {
       vid.currentTime = c.start
-      vid.play().catch(err => console.warn('play error:', err))
+      // Check if there's a transition for this clip
+      const tr = transitions[c._clipId || c.id]
+      if (tr && index > 0) {
+        vid.style.opacity = '0'
+        vid.play().catch(err => console.warn('play error:', err))
+        playTransition(tr.type, tr.duration)
+      } else {
+        vid.play().catch(err => console.warn('play error:', err))
+      }
     }
   }
 }
@@ -797,6 +1260,8 @@ vid.addEventListener('timeupdate', () => {
       updatePlayhead(globalT)
       const totalDur = playQueue.reduce((a, x) => a + x.tlDuration, 0)
       document.getElementById('time-display').textContent = fmt(globalT) + ' / ' + fmt(totalDur)
+      // Chequear marcadores de loop
+      if (markers.length > 0 && checkMarkersAt(globalT)) return
       if (vid.currentTime >= c.start + c.tlDuration - 0.1) {
         vid.pause()
         playClipAt(playQueueIndex + 1)
@@ -976,10 +1441,12 @@ async function startExport() {
         })
         await window.api.exportVideo({ input: c.path, output: tmpOut, startTime: c.start, duration: c.tlDuration, speed, brightness, contrast })
       }
-      setStatus('Uniendo clips...')
+      setStatus('Uniendo clips con transiciones...')
       document.getElementById('export-bar').style.width = '92%'
       document.getElementById('export-pct').textContent = '92%'
-      await window.api.concatVideos({ files: tmpFiles, output: outPath })
+      // Pass transitions aligned to ordered clips array
+      const exportTransitions = ordered.map(c => transitions[c.id] || null)
+      await window.api.concatVideos({ files: tmpFiles, output: outPath, transitions: exportTransitions })
     }
     overlay.style.display = 'none'
     setStatus('✓ Exportado: ' + outPath.split('/').pop())
@@ -1225,6 +1692,22 @@ document.addEventListener('DOMContentLoaded', () => {
   updateUndoButtons()
   document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
 
+
+  // ── Left rail tab switching ───────────────────────────────────────────────
+  document.querySelectorAll('.rail-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'))
+      document.querySelectorAll('.lpanel').forEach(p => p.style.display = 'none')
+      btn.classList.add('active')
+      const panel = document.getElementById('lpanel-' + btn.dataset.panel)
+      if (panel) panel.style.display = 'flex'
+      // If opening transitions panel without a clip selected, show hint
+      if (btn.dataset.panel === 'transitions' && !panelSelectedTransitionClipId) {
+        // panel already shows hint by default
+      }
+    })
+  })
+
   // Props panel tab switching
   document.querySelectorAll('.props-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -1287,4 +1770,34 @@ document.addEventListener('DOMContentLoaded', () => {
   })
   document.getElementById('btn-split-tl').addEventListener('click', splitClip)
   document.getElementById('btn-delete-tl').addEventListener('click', deleteClip)
+
+  // Marcadores
+  document.getElementById('btn-add-marker').addEventListener('click', () => {
+    addMarkerAtPlayhead()
+    document.getElementById('btn-clear-markers').style.display = markers.length > 0 ? '' : 'none'
+  })
+  document.getElementById('btn-clear-markers').addEventListener('click', () => {
+    clearAllMarkers()
+    document.getElementById('btn-clear-markers').style.display = 'none'
+  })
+
+  // Clic derecho en el ruler → agregar marcador en esa posición
+  document.getElementById('tl-ruler').addEventListener('contextmenu', e => {
+    e.preventDefault()
+    const scrollEl = document.getElementById('tl-scroll')
+    const rect = document.getElementById('tl-ruler').getBoundingClientRect()
+    const x = e.clientX - rect.left + scrollEl.scrollLeft
+    const t = Math.max(0.1, x / tlZoom)
+    const nearby = markers.find(m => Math.abs(m.time - t) < 0.2)
+    if (nearby) {
+      removeMarker(nearby.id)
+      document.getElementById('btn-clear-markers').style.display = markers.length > 0 ? '' : 'none'
+    } else {
+      markers.push({ id: Date.now(), time: t })
+      markers.sort((a, b) => a.time - b.time)
+      renderMarkers()
+      document.getElementById('btn-clear-markers').style.display = ''
+      setStatus(`Marcador agregado en ${fmt(t)} (clic derecho para quitar)`)
+    }
+  })
 })

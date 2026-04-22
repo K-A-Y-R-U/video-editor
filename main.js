@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const ffmpeg = require('fluent-ffmpeg')
-const { execSync } = require('child_process')
+const { execSync, spawn } = require('child_process')
 const fs = require('fs')
 
 app.commandLine.appendSwitch('ozone-platform', 'x11')
@@ -31,10 +31,7 @@ let mainWindow = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1280, height: 800, minWidth: 900, minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -44,15 +41,13 @@ function createWindow() {
     backgroundColor: '#1a1a1a'
   })
   mainWindow.loadFile('index.html')
-  mainWindow.webContents.openDevTools()  // <-- DevTools abierto para debug
+  mainWindow.webContents.openDevTools()
 }
 
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => app.quit())
 
-// ── Abrir archivos ────────────────────────────────────────────────────────────
 ipcMain.handle('open-file', async () => {
-  console.log('[main] open-file invocado')
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
@@ -62,16 +57,11 @@ ipcMain.handle('open-file', async () => {
         { name: 'Imagen', extensions: ['jpg','jpeg','png','gif','bmp','webp','tiff'] }
       ]
     })
-    console.log('[main] resultado dialog:', result)
     if (result.canceled) return []
     return result.filePaths
-  } catch(e) {
-    console.error('[main] ERROR open-file:', e)
-    return []
-  }
+  } catch(e) { return [] }
 })
 
-// ── Guardar archivo ───────────────────────────────────────────────────────────
 ipcMain.handle('save-file', async () => {
   const result = await dialog.showSaveDialog(mainWindow, {
     filters: [{ name: 'Video MP4', extensions: ['mp4'] }],
@@ -81,7 +71,6 @@ ipcMain.handle('save-file', async () => {
   return result.filePath
 })
 
-// ── Metadata ──────────────────────────────────────────────────────────────────
 ipcMain.handle('get-metadata', async (event, filePath) => {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, meta) => {
@@ -91,7 +80,6 @@ ipcMain.handle('get-metadata', async (event, filePath) => {
   })
 })
 
-// ── Exportar un clip ──────────────────────────────────────────────────────────
 ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast }) => {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject('FFmpeg no encontrado.')
@@ -108,10 +96,7 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
       const at = Math.min(Math.max(speed, 0.5), 2.0).toFixed(3)
       cmd = cmd.audioFilters(`atempo=${at}`)
     }
-    cmd
-      .output(output)
-      .videoCodec('libx264')
-      .audioCodec('aac')
+    cmd.output(output).videoCodec('libx264').audioCodec('aac')
       .outputOptions(['-preset', 'fast', '-crf', '23'])
       .on('progress', p => event.sender.send('export-progress', Math.round(p.percent || 0)))
       .on('end', () => resolve({ ok: true }))
@@ -120,27 +105,200 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
   })
 })
 
-// ── Concatenar múltiples clips ────────────────────────────────────────────────
-ipcMain.handle('concat-videos', async (event, { files, output }) => {
+// ── CONCAT CON TRANSICIONES ───────────────────────────────────────────────────
+
+const XFADE_MAP = {
+  fade:'fade', fadeblack:'fadeblack', fadewhite:'fadewhite', flash:'fadewhite',
+  slideleft:'slideleft', slideright:'slideright', slideup:'slideup', slidedown:'slidedown',
+  wipeleft:'wipeleft', wiperight:'wiperight', wipeup:'wipeup', wipedown:'wipedown',
+  zoomin:'zoomin', zoomout:'fadeblack', zoomfade:'fade', blur:'fade',
+  glitch:'pixelize', pixelize:'pixelize', spin:'radial',
+  dissolve:'dissolve', radial:'radial', circlecrop:'circlecrop',
+}
+
+function runFFmpeg(args) {
   return new Promise((resolve, reject) => {
-    if (!ffmpegPath) return reject('FFmpeg no encontrado.')
-    const listPath = `/tmp/ve_concat_${Date.now()}.txt`
-    const listContent = files.map(f => `file '${f}'`).join('\n')
-    fs.writeFileSync(listPath, listContent)
-    ffmpeg()
-      .input(listPath)
-      .inputOptions(['-f', 'concat', '-safe', '0'])
-      .outputOptions(['-c', 'copy'])
-      .output(output)
-      .on('end', () => {
-        try { fs.unlinkSync(listPath) } catch(e) {}
-        files.forEach(f => { try { fs.unlinkSync(f) } catch(e) {} })
-        resolve({ ok: true })
-      })
-      .on('error', e => {
-        try { fs.unlinkSync(listPath) } catch(e) {}
-        reject(e.message)
-      })
-      .run()
+    let stderr = ''
+    const proc = spawn(ffmpegPath, args)
+    proc.stderr.on('data', d => { stderr += d.toString() })
+    proc.on('close', code => {
+      if (code === 0) resolve()
+      else {
+        console.error('[ffmpeg]\n' + args.join(' ') + '\n' + stderr.slice(-1500))
+        reject(new Error(stderr.slice(-600)))
+      }
+    })
+    proc.on('error', err => reject(new Error('spawn: ' + err.message)))
   })
+}
+
+function probeFile(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, meta) => {
+      if (err) return reject(err)
+      const vs = meta.streams.find(s => s.codec_type === 'video')
+      resolve({
+        duration: parseFloat(meta.format.duration) || 0,
+        hasAudio: meta.streams.some(s => s.codec_type === 'audio'),
+        width:  vs ? (vs.width  || 1920) : 1920,
+        height: vs ? (vs.height || 1080) : 1080,
+      })
+    })
+  })
+}
+
+function tmpPath(tag) {
+  return `/tmp/ve_${tag}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`
+}
+
+// Normaliza un clip: resolución fija, fps=30, yuv420p, audio stereo aac
+// Esto hace que TODOS los clips sean idénticos en formato antes de unirlos
+async function normalizeClip(inputFile, hasAudio, targetW, targetH) {
+  const out = tmpPath('norm')
+  const vf = [
+    `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease`,
+    `pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    `fps=30`,
+    `format=yuv420p`
+  ].join(',')
+
+  const args = ['-i', inputFile]
+  if (!hasAudio) {
+    args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100')
+  }
+  args.push(
+    '-vf', vf,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+    '-map', '0:v:0',
+    '-map', hasAudio ? '0:a:0' : '1:a:0',
+    '-shortest', '-y', out
+  )
+  await runFFmpeg(args)
+  return out
+}
+
+// xfade entre dos clips normalizados
+async function applyXfade(clipA, clipB, xfadeType, trDur, durA) {
+  const out = tmpPath('xf')
+  const offset = Math.max(0.01, durA - trDur)
+  const fc = [
+    `[0:v][1:v]xfade=transition=${xfadeType}:duration=${trDur.toFixed(3)}:offset=${offset.toFixed(3)}[vout]`,
+    `[0:a][1:a]acrossfade=d=${trDur.toFixed(3)}:c1=tri:c2=tri[aout]`
+  ].join(';')
+  await runFFmpeg([
+    '-i', clipA, '-i', clipB,
+    '-filter_complex', fc,
+    '-map', '[vout]', '-map', '[aout]',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+    '-y', out
+  ])
+  return out
+}
+
+// concat simple entre dos clips normalizados (pueden usar -c copy porque son idénticos)
+async function concatTwo(clipA, clipB) {
+  const out = tmpPath('cat')
+  const listPath = out + '.txt'
+  fs.writeFileSync(listPath, `file '${clipA}'\nfile '${clipB}'`)
+  try {
+    await runFFmpeg([
+      '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-c', 'copy', '-y', out
+    ])
+  } finally {
+    try { fs.unlinkSync(listPath) } catch(e) {}
+  }
+  return out
+}
+
+ipcMain.handle('concat-videos', async (event, { files, output, transitions }) => {
+  const allTmp = []
+  const cleanup = () => {
+    files.forEach(f => { try { fs.unlinkSync(f) } catch(e) {} })
+    allTmp.forEach(f => { try { fs.unlinkSync(f) } catch(e) {} })
+  }
+
+  try {
+    if (!ffmpegPath) throw new Error('FFmpeg no encontrado.')
+    if (!files || files.length === 0) throw new Error('Sin archivos.')
+
+    if (files.length === 1) {
+      fs.copyFileSync(files[0], output)
+      try { fs.unlinkSync(files[0]) } catch(e) {}
+      return { ok: true }
+    }
+
+    const send = pct => event.sender.send('export-progress', Math.min(99, Math.round(pct)))
+    const total = files.length
+
+    // 1. Probe todos
+    send(2)
+    const infos = await Promise.all(files.map(f => probeFile(f)))
+    const targetW = infos[0].width  || 1920
+    const targetH = infos[0].height || 1080
+    console.log(`[main] target: ${targetW}x${targetH}, clips: ${total}`)
+
+    // 2. Normalizar todos los clips al mismo formato
+    const normalized = []
+    for (let i = 0; i < files.length; i++) {
+      send(5 + (i / total) * 40)
+      console.log(`[main] normalizando ${i+1}/${total}`)
+      const normed = await normalizeClip(files[i], infos[i].hasAudio, targetW, targetH)
+      allTmp.push(normed)
+      const ni = await probeFile(normed)
+      normalized.push({ path: normed, duration: ni.duration })
+    }
+
+    // 3. Encadenar pares
+    let running = normalized[0].path
+    let runDur   = normalized[0].duration
+
+    for (let i = 1; i < normalized.length; i++) {
+      send(45 + (i / total) * 50)
+      const next = normalized[i]
+      const tr   = transitions && transitions[i]
+      let result
+
+      if (tr && tr.type) {
+        const xtype  = XFADE_MAP[tr.type] || 'fade'
+        const maxTr  = Math.min(runDur - 0.1, next.duration - 0.1, 3.0)
+        const trDur  = Math.max(0.1, Math.min(tr.duration || 0.5, maxTr))
+        console.log(`[main] xfade ${i-1}→${i}: ${xtype} ${trDur}s`)
+        result  = await applyXfade(running, next.path, xtype, trDur, runDur)
+        runDur  = runDur + next.duration - trDur
+      } else {
+        console.log(`[main] concat ${i-1}→${i}`)
+        result  = await concatTwo(running, next.path)
+        runDur  = runDur + next.duration
+      }
+
+      allTmp.push(result)
+      // Borrar el running anterior si ya no es el primero normalizado
+      if (i > 1) {
+        try { fs.unlinkSync(running) } catch(e) {}
+        const idx = allTmp.indexOf(running)
+        if (idx > -1) allTmp.splice(idx, 1)
+      }
+      running = result
+    }
+
+    // 4. Copiar al destino final (renameSync falla entre distintas particiones)
+    fs.copyFileSync(running, output)
+    try { fs.unlinkSync(running) } catch(e) {}
+    const idx = allTmp.indexOf(running)
+    if (idx > -1) allTmp.splice(idx, 1)
+
+    send(100)
+    console.log('[main] exportado:', output)
+    return { ok: true }
+
+  } catch(err) {
+    const msg = err.message || String(err)
+    console.error('[main] concat error:', msg)
+    throw msg
+  } finally {
+    cleanup()
+  }
 })
