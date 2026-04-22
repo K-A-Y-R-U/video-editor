@@ -1461,6 +1461,105 @@ async function startExport() {
 renderTimeline()
 // ── Event Listeners (CSP-safe, no inline handlers) ───────────────────────────
 
+// ── Descarga de video (yt-dlp) ────────────────────────────────────────────────
+function openDownloadModal() {
+  const modal = document.getElementById('download-modal')
+  modal.style.display = 'flex'
+  document.getElementById('download-url-input').focus()
+  document.getElementById('download-progress-wrap').style.display = 'none'
+  document.getElementById('download-url-input').value = ''
+  document.getElementById('download-status-text').textContent = ''
+  document.getElementById('download-progress-bar').style.width = '0'
+  document.getElementById('btn-download-start').disabled = false
+  document.getElementById('btn-download-start').textContent = 'Descargar'
+}
+
+function closeDownloadModal() {
+  document.getElementById('download-modal').style.display = 'none'
+}
+
+async function startDownload() {
+  const url = document.getElementById('download-url-input').value.trim()
+  if (!url) { setStatus('Ingresa una URL'); return }
+
+  const startBtn = document.getElementById('btn-download-start')
+  startBtn.disabled = true
+  startBtn.textContent = 'Descargando...'
+  document.getElementById('download-progress-wrap').style.display = 'block'
+  document.getElementById('download-progress-bar').style.width = '10%'
+  document.getElementById('download-status-text').textContent = 'Iniciando descarga...'
+
+  // Listen to progress updates
+  let progressPct = 2
+  const barEl  = document.getElementById('download-progress-bar')
+  const txtEl  = document.getElementById('download-status-text')
+
+  // Pulse animation while waiting for first real progress
+  let pulseInterval = setInterval(() => {
+    if (progressPct <= 5) {
+      progressPct = progressPct >= 5 ? 2 : progressPct + 0.5
+      barEl.style.width = progressPct + '%'
+    }
+  }, 120)
+
+  if (window.api.onDownloadProgress) {
+    window.api.onDownloadProgress(data => {
+      const msg = data.msg || data.line || ''
+      // Filter out noisy ffmpeg lines
+      if (msg && !msg.includes('frame=') && !msg.includes('fps=') && !msg.includes('q=')) {
+        txtEl.textContent = msg
+      }
+      if (data.pct !== null && data.pct !== undefined) {
+        clearInterval(pulseInterval)
+        progressPct = Math.max(progressPct, data.pct)
+        barEl.style.width = Math.min(progressPct, 99) + '%'
+      }
+    })
+  }
+
+  try {
+    const outDir = await window.api.getDownloadsDir()
+    const result = await window.api.downloadVideo({ url, outDir })
+
+    clearInterval(pulseInterval)
+    barEl.style.width = '100%'
+    txtEl.textContent = '✓ Descargado: ' + result.path.split('/').pop()
+    startBtn.textContent = '✓ Listo'
+    setStatus('Descargado: ' + result.path.split('/').pop())
+
+    // Auto-import the downloaded file
+    if (result.path) {
+      await importFilePaths([result.path])
+      setTimeout(closeDownloadModal, 1200)
+    }
+  } catch(err) {
+    const msg = err.message || String(err)
+    clearInterval(pulseInterval)
+    txtEl.style.whiteSpace = 'pre-wrap'
+    txtEl.style.maxHeight = '80px'
+    txtEl.style.color = 'var(--red)'
+    txtEl.textContent = '✗ ' + msg
+    document.getElementById('download-progress-bar').style.width = '0'
+    startBtn.disabled = false
+    startBtn.textContent = 'Reintentar'
+    setStatus('Error al descargar')
+  }
+}
+
+// Helper: import file paths directly (reuse import logic)
+async function importFilePaths(paths) {
+  for (const filePath of paths) {
+    const meta = await window.api.getMetadata(filePath)
+    const name = filePath.split('/').pop()
+    const isImg = isImagePath(filePath)
+    const duration = isImg ? 5 : (meta?.duration || 10)
+    mediaItems.push({ path: filePath, name, duration, isImage: isImg })
+  }
+  renderMediaPanel()
+  setStatus(`${paths.length} archivo(s) importado(s)`)
+}
+
+
 // ── Library → Timeline native drag ───────────────────────────────────────────
 let libDragGhost = null     // floating ghost element
 let libDragIndex = null     // mediaItems index being dragged
@@ -1692,6 +1791,24 @@ document.addEventListener('DOMContentLoaded', () => {
   updateUndoButtons()
   document.getElementById('btn-apply-all').addEventListener('click', applyToAll)
 
+
+
+  // ── Download modal ───────────────────────────────────────────────────────
+  document.getElementById('btn-download-yt').addEventListener('click', openDownloadModal)
+  document.getElementById('btn-download-close').addEventListener('click', closeDownloadModal)
+  document.getElementById('btn-download-start').addEventListener('click', startDownload)
+  document.getElementById('install-hint').addEventListener('click', () => {
+    const el = document.getElementById('install-instructions')
+    el.style.display = el.style.display === 'none' ? 'block' : 'none'
+  })
+  // Close modal on backdrop click
+  document.getElementById('download-modal').addEventListener('click', e => {
+    if (e.target.id === 'download-modal') closeDownloadModal()
+  })
+  // Enter key to download
+  document.getElementById('download-url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startDownload()
+  })
 
   // ── Left rail tab switching ───────────────────────────────────────────────
   document.querySelectorAll('.rail-btn').forEach(btn => {

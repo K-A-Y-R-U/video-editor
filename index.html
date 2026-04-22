@@ -343,8 +343,64 @@ body {
       <span class="panel-title">Librería</span>
       <span class="panel-count" id="media-count">0</span>
     </div>
+    <div style="padding:7px 8px;border-bottom:1px solid var(--border);display:flex;gap:5px">
+      <button class="tbtn" id="btn-download-yt" style="flex:1;justify-content:center;gap:5px;font-size:11px">
+        <span>⬇</span> Descargar video
+      </button>
+    </div>
     <div id="media-list">
       <div class="empty-hint"><div class="empty-icon">🎬</div>Importa archivos con<br>el botón de arriba.<br>Arrastra al timeline<br>o doble clic para agregar.</div>
+    </div>
+  </div>
+
+  <!-- DOWNLOAD MODAL -->
+  <div id="download-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:500;align-items:center;justify-content:center">
+    <div style="background:var(--bg-2);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:28px 28px 24px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text-1)">⬇ Descargar video</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">YouTube, Twitter, Instagram, URL directa (.mp4)</div>
+        </div>
+        <button id="btn-download-close" style="background:none;border:none;color:var(--text-3);font-size:20px;cursor:pointer;padding:4px">✕</button>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <input id="download-url-input" type="text" placeholder="https://youtube.com/watch?v=... o URL de video"
+          style="width:100%;background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius-sm);
+                 color:var(--text-1);font-size:12px;padding:9px 12px;font-family:inherit;outline:none">
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <select id="download-quality" style="flex:1;background:var(--bg-3);border:1px solid var(--border);color:var(--text-2);font-size:11px;border-radius:var(--radius-sm);padding:7px 8px;cursor:pointer;font-family:inherit">
+          <option value="best">Mejor calidad</option>
+          <option value="1080">1080p</option>
+          <option value="720">720p</option>
+          <option value="480">480p</option>
+        </select>
+        <button id="btn-download-start" class="tbtn primary" style="padding:7px 18px;font-size:12px">
+          Descargar
+        </button>
+      </div>
+
+      <!-- Progress -->
+      <div id="download-progress-wrap" style="display:none">
+        <div style="background:var(--bg-4);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden">
+          <div id="download-progress-bar" style="height:100%;background:linear-gradient(90deg,var(--accent),#8090ff);border-radius:4px;width:0;transition:width 0.3s;box-shadow:0 0 8px var(--accent-glow)"></div>
+        </div>
+        <div id="download-status-text" style="font-size:10px;color:var(--text-3);font-family:monospace;max-height:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+      </div>
+
+      <div style="font-size:10px;color:var(--text-3);margin-top:10px">
+        Requiere <code style="background:var(--bg-4);padding:1px 5px;border-radius:3px">yt-dlp</code> instalado.
+        <span style="color:var(--accent);cursor:pointer" id="install-hint">¿Cómo instalar?</span>
+      </div>
+      <div id="install-instructions" style="display:none;background:var(--bg-3);border-radius:6px;padding:10px;margin-top:8px;font-size:10px;color:var(--text-2);font-family:monospace;line-height:1.8">
+        pip install yt-dlp<br>
+        # o en Fedora/RHEL:<br>
+        sudo dnf install yt-dlp<br>
+        # o en Ubuntu:<br>
+        sudo apt install yt-dlp
+      </div>
     </div>
   </div>
   <div class="lpanel lpanel-placeholder" id="lpanel-audio" style="display:none">

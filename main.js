@@ -6,16 +6,30 @@ const fs = require('fs')
 
 app.commandLine.appendSwitch('ozone-platform', 'x11')
 
+// ── Binarios empaquetados dentro de la app ───────────────────────────────────
+// Busca primero en resources/bin/ (empaquetado con electron-builder),
+// luego en el sistema como fallback.
 function findBin(name) {
-  try {
-    return execSync(`which ${name}`).toString().trim()
-  } catch(e) {
-    const fallbacks = [`/usr/bin/${name}`, `/usr/local/bin/${name}`, `/bin/${name}`]
-    for (const p of fallbacks) {
-      try { fs.accessSync(p); return p } catch(e) {}
-    }
-    return null
+  const platform = process.platform  // 'win32' | 'linux' | 'darwin'
+  const ext      = platform === 'win32' ? '.exe' : ''
+  const binName  = name + ext
+
+  // 1. Dentro del paquete de la app (electron-builder extraFiles)
+  const appBin = path.join(process.resourcesPath || __dirname, 'bin', binName)
+  try { fs.accessSync(appBin, fs.constants.X_OK); return appBin } catch(e) {}
+
+  // 2. Junto al ejecutable en dev (carpeta bin/ del proyecto)
+  const devBin = path.join(__dirname, 'bin', binName)
+  try { fs.accessSync(devBin, fs.constants.X_OK); return devBin } catch(e) {}
+
+  // 3. En el PATH del sistema (fallback)
+  try { return execSync(`which ${name} 2>/dev/null || where ${name} 2>nul`).toString().trim().split('\n')[0] } catch(e) {}
+
+  const fallbacks = [`/usr/bin/${name}`, `/usr/local/bin/${name}`, `/bin/${name}`]
+  for (const p of fallbacks) {
+    try { fs.accessSync(p); return p } catch(e) {}
   }
+  return null
 }
 
 const ffmpegPath  = findBin('ffmpeg')
@@ -302,3 +316,193 @@ ipcMain.handle('concat-videos', async (event, { files, output, transitions }) =>
     cleanup()
   }
 })
+
+// ── Descarga de YouTube / URL ─────────────────────────────────────────────────
+const os = require('os')
+const https = require('https')
+const http  = require('http')
+
+// ── Descarga universal (URL directa .mp4/.webm + YouTube via yt-dlp si disponible) ──
+ipcMain.handle('download-video', async (event, { url }) => {
+  const sendProgress = (pct, msg) => {
+    try { event.sender.send('download-progress', { pct, msg }) } catch(e) {}
+  }
+
+  if (!url || !url.startsWith('http')) throw new Error('URL inválida')
+
+  const outDir = getDownloadsDir()
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
+
+  const isDirectVideo = /\.(mp4|webm|mkv|mov|avi|m4v)(\?|$)/i.test(url)
+
+  // ── A) URL directa de video → descarga con https nativo (sin dependencias) ──
+  if (isDirectVideo) {
+    return await downloadDirectUrl(url, outDir, sendProgress)
+  }
+
+  // ── B) YouTube / redes sociales → usar yt-dlp ───────────────────────────
+  let ytdlp = findBin('yt-dlp')
+
+  // Si no está, intentar instalarlo automáticamente con pip
+  if (!ytdlp) {
+    sendProgress(2, 'yt-dlp no encontrado, instalando automáticamente...')
+    try {
+      execSync('pip install -q yt-dlp || pip3 install -q yt-dlp', { timeout: 60000 })
+      ytdlp = findBin('yt-dlp')
+    } catch(e) {}
+  }
+
+  if (!ytdlp) {
+    throw new Error(
+      'No se pudo instalar yt-dlp automáticamente.\n' +
+      'Instálalo manualmente con:\n  sudo dnf install yt-dlp\n  o: pip install yt-dlp'
+    )
+  }
+
+  return await downloadWithYtDlp(event, ytdlp, url, outDir, sendProgress)
+})
+
+function getDownloadsDir() {
+  const candidates = [
+    path.join(os.homedir(), 'Descargas'),
+    path.join(os.homedir(), 'Downloads'),
+    path.join(os.homedir(), 'Videos'),
+    os.tmpdir()
+  ]
+  return candidates.find(p => { try { return fs.existsSync(p) } catch(e) { return false } }) || os.tmpdir()
+}
+
+ipcMain.handle('get-downloads-dir', async () => getDownloadsDir())
+
+function downloadWithYtDlp(event, ytdlp, url, outDir, sendProgress) {
+  const { spawn } = require('child_process')
+  return new Promise((resolve, reject) => {
+    const args = [
+      url,
+      '--output', path.join(outDir, '%(title)s.%(ext)s'),
+      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
+      '--no-playlist',
+      '--newline',
+      '--progress',
+      '--progress-template', '[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
+    ]
+
+    let outPath = ''
+    let lastPct = 2
+    // Use spawn instead of execFile so we get streaming output
+    const proc = spawn(ytdlp, args)
+
+    const parseLine = (line) => {
+      line = line.trim()
+      if (!line) return
+
+      // Detect output file path
+      if (line.startsWith('[Merger]') || line.startsWith('[download] Destination:') || line.includes('has already been downloaded')) {
+        const match = line.match(/Destination: (.+)$/) || line.match(/: (.+\.mp4)/)
+        if (match) outPath = match[1].trim()
+      }
+
+      // Detect final merged file
+      if (line.startsWith('[ffmpeg]') && line.includes('Merging formats into')) {
+        const match = line.match(/"(.+?)"/)
+        if (match) outPath = match[1]
+      }
+
+      // Check if line is an existing file path
+      if (line && !line.startsWith('[') && fs.existsSync(line)) outPath = line
+
+      // Parse percentage
+      const pctMatch = line.match(/(\d+\.?\d*)%/)
+      if (pctMatch) {
+        lastPct = Math.max(lastPct, parseFloat(pctMatch[1]))
+        // Show phase: video or audio
+        const phase = lastPct > 50 && line.includes('audio') ? ' (audio)' : ''
+        sendProgress(Math.min(lastPct * 0.9, 89), line + phase)
+      } else if (line.includes('Merging')) {
+        sendProgress(92, 'Uniendo video y audio...')
+      } else if (line.includes('Deleting') || line.includes('ffmpeg')) {
+        sendProgress(96, 'Finalizando...')
+      } else {
+        sendProgress(null, line)
+      }
+    }
+
+    let stdoutBuf = ''
+    let stderrBuf = ''
+
+    proc.stdout.on('data', d => {
+      stdoutBuf += d.toString()
+      const lines = stdoutBuf.split('\n')
+      stdoutBuf = lines.pop()
+      lines.forEach(parseLine)
+    })
+
+    proc.stderr.on('data', d => {
+      stderrBuf += d.toString()
+      const lines = stderrBuf.split('\n')
+      stderrBuf = lines.pop()
+      lines.forEach(parseLine)
+    })
+
+    proc.on('close', code => {
+      [stdoutBuf, stderrBuf].forEach(buf => { if (buf.trim()) parseLine(buf) })
+
+      if (code === 0) {
+        // If outPath not captured, find newest file in dir
+        if (!outPath || !fs.existsSync(outPath)) {
+          try {
+            const files = fs.readdirSync(outDir)
+              .filter(f => /\.(mp4|webm|mkv|m4a)$/.test(f))
+              .map(f => ({ f, t: fs.statSync(path.join(outDir, f)).mtimeMs }))
+              .sort((a, b) => b.t - a.t)
+            if (files.length) outPath = path.join(outDir, files[0].f)
+          } catch(e) {}
+        }
+        if (outPath) {
+          sendProgress(100, '✓ Completado: ' + path.basename(outPath))
+          return resolve({ path: outPath })
+        }
+      }
+      reject(new Error('yt-dlp falló (código ' + code + '). Intenta con otra URL o formato.'))
+    })
+
+    proc.on('error', err => reject(new Error('No se pudo ejecutar yt-dlp: ' + err.message)))
+  })
+}
+
+function downloadDirectUrl(url, outDir, sendProgress) {
+  return new Promise((resolve, reject) => {
+    const fileName = decodeURIComponent(url.split('/').pop().split('?')[0]) || 'video.mp4'
+    const outPath  = path.join(outDir, fileName)
+    const file     = fs.createWriteStream(outPath)
+    const proto    = url.startsWith('https') ? https : http
+    sendProgress(5, 'Conectando...')
+
+    const req = proto.get(url, res => {
+      // Follow redirects
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        file.close()
+        fs.unlink(outPath, () => {})
+        return downloadDirectUrl(res.headers.location, outDir, sendProgress).then(resolve).catch(reject)
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error('Error HTTP ' + res.statusCode))
+      }
+      const total = parseInt(res.headers['content-length'] || '0')
+      let downloaded = 0
+      res.on('data', chunk => {
+        downloaded += chunk.length
+        const pct = total ? Math.round(downloaded / total * 100) : null
+        sendProgress(pct, `Descargando... ${(downloaded/1024/1024).toFixed(1)} MB`)
+      })
+      res.pipe(file)
+      file.on('finish', () => {
+        file.close()
+        sendProgress(100, 'Completado')
+        resolve({ path: outPath })
+      })
+    })
+    req.on('error', err => { fs.unlink(outPath, () => {}); reject(err) })
+  })
+}
