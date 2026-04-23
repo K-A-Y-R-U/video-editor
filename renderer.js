@@ -249,6 +249,14 @@ function renderMediaPanel() {
       startLibraryDrag(e, i)
     })
 
+
+    // ── Menú contextual clic derecho ──────────────────────────────────────
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      showLibraryContextMenu(e.clientX, e.clientY, i)
+    })
+
     list.appendChild(item)
   })
 }
@@ -1802,4 +1810,197 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`Marcador agregado en ${fmt(t)} (clic derecho para quitar)`)
     }
   })
+})
+
+// ── Menú contextual de la librería ───────────────────────────────────────────
+function showLibraryContextMenu(x, y, index) {
+  removeContextMenu()
+  const menu = document.createElement('div')
+  menu.id = 'ctx-menu'
+  menu.style.cssText = [
+    'position:fixed',
+    `left:${x}px`,
+    `top:${y}px`,
+    'background:#1e1e1e',
+    'border:1px solid #3a3a3a',
+    'border-radius:8px',
+    'padding:4px 0',
+    'min-width:190px',
+    'z-index:9999',
+    'box-shadow:0 4px 24px rgba(0,0,0,0.7)',
+    'font-size:13px',
+    'font-family:system-ui,sans-serif'
+  ].join(';')
+
+  const items = [
+    { icon: '▶', label: 'Previsualizar',       action: () => selectMedia(index) },
+    { icon: '+', label: 'Agregar al timeline',  action: () => { selectMedia(index); addToTimeline() } },
+    { divider: true },
+    { icon: '✏', label: 'Renombrar',            action: () => renameMediaItem(index) },
+    { icon: '⧉', label: 'Duplicar',             action: () => duplicateMediaItem(index) },
+    { divider: true },
+    { icon: '✕', label: 'Eliminar de librería', action: () => deleteMediaItem(index), danger: true },
+  ]
+
+  items.forEach(it => {
+    if (it.divider) {
+      const sep = document.createElement('div')
+      sep.style.cssText = 'height:1px;background:#2a2a2a;margin:4px 0'
+      menu.appendChild(sep)
+      return
+    }
+    const btn = document.createElement('div')
+    btn.style.cssText = [
+      'padding:7px 14px',
+      'cursor:pointer',
+      'display:flex',
+      'align-items:center',
+      'gap:10px',
+      `color:${it.danger ? '#ff6b6b' : '#ddd'}`,
+      'border-radius:4px',
+      'margin:0 4px',
+      'transition:background 0.1s'
+    ].join(';')
+    const iconSpan = document.createElement('span')
+    iconSpan.style.cssText = 'font-size:13px;width:16px;text-align:center;flex-shrink:0'
+    iconSpan.textContent = it.icon
+    const labelSpan = document.createElement('span')
+    labelSpan.textContent = it.label
+    btn.appendChild(iconSpan)
+    btn.appendChild(labelSpan)
+    btn.addEventListener('mouseenter', () => { btn.style.background = it.danger ? '#3a1a1a' : '#2a2a2a' })
+    btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+    btn.addEventListener('click', () => { removeContextMenu(); it.action() })
+    menu.appendChild(btn)
+  })
+
+  document.body.appendChild(menu)
+
+  // Ajustar si se sale de la pantalla
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect()
+    if (r.right  > window.innerWidth)  menu.style.left = (x - r.width)  + 'px'
+    if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px'
+  })
+
+  setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 50)
+}
+
+function removeContextMenu() {
+  const m = document.getElementById('ctx-menu')
+  if (m) m.remove()
+}
+
+function renameMediaItem(index) {
+  const m = mediaItems[index]
+  const list = document.getElementById('media-list')
+  const itemEls = list.querySelectorAll('.media-item')
+  const itemEl = itemEls[index]
+  if (!itemEl) return
+  const nameEl = itemEl.querySelector('.media-name')
+  if (!nameEl) return
+  const oldName = m.name
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.value = oldName
+  input.style.cssText = [
+    'background:#111',
+    'border:1px solid #4f6ef7',
+    'border-radius:4px',
+    'color:#fff',
+    'font-size:12px',
+    'padding:2px 6px',
+    'width:100%',
+    'outline:none',
+    'font-family:system-ui,sans-serif'
+  ].join(';')
+  nameEl.replaceWith(input)
+  input.focus()
+  input.select()
+  const confirm = () => {
+    m.name = input.value.trim() || oldName
+    // Actualizar también en clips del timeline
+    clips.forEach(c => { if (c.path === m.path && c.name === oldName) c.name = m.name })
+    renderMediaPanel()
+    renderTimeline()
+    setStatus('Renombrado: ' + m.name)
+  }
+  input.addEventListener('blur', confirm)
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); confirm() }
+    if (e.key === 'Escape') { input.value = oldName; confirm() }
+  })
+}
+
+function duplicateMediaItem(index) {
+  const m = mediaItems[index]
+  const copy = { ...m, name: m.name.replace(/(\.\w+)$/, '_copia$1') }
+  mediaItems.splice(index + 1, 0, copy)
+  renderMediaPanel()
+  setStatus('Duplicado: ' + copy.name)
+}
+
+function deleteMediaItem(index) {
+  const m = mediaItems[index]
+  const clipsAntes = clips.length
+  clips = clips.filter(c => c.path !== m.path)
+  mediaItems.splice(index, 1)
+  if (selectedMediaIndex >= mediaItems.length) selectedMediaIndex = mediaItems.length - 1
+  renderMediaPanel()
+  renderTimeline()
+  const removed = clipsAntes - clips.length
+  setStatus('Eliminado: ' + m.name + (removed > 0 ? ` (y ${removed} clip(s) del timeline)` : ''))
+}
+
+// Clic derecho en área vacía de la librería
+document.addEventListener('DOMContentLoaded', () => {
+  const mediaList = document.getElementById('media-list')
+  if (mediaList) {
+    mediaList.addEventListener('contextmenu', e => {
+      if (e.target.closest('.media-item')) return
+      e.preventDefault()
+      removeContextMenu()
+      const menu = document.createElement('div')
+      menu.id = 'ctx-menu'
+      menu.style.cssText = [
+        'position:fixed',
+        `left:${e.clientX}px`,
+        `top:${e.clientY}px`,
+        'background:#1e1e1e',
+        'border:1px solid #3a3a3a',
+        'border-radius:8px',
+        'padding:4px 0',
+        'min-width:190px',
+        'z-index:9999',
+        'box-shadow:0 4px 24px rgba(0,0,0,0.7)',
+        'font-size:13px'
+      ].join(';')
+      const generalItems = [
+        { icon: '📁', label: 'Importar archivos', action: importFiles },
+        { divider: true },
+        { icon: '✕', label: 'Limpiar librería', action: () => {
+          if (confirm('¿Eliminar todos los archivos de la librería?')) {
+            mediaItems = []; clips = []; selectedMediaIndex = -1
+            renderMediaPanel(); renderTimeline(); setStatus('Librería limpiada')
+          }
+        }, danger: true }
+      ]
+      generalItems.forEach(it => {
+        if (it.divider) {
+          const sep = document.createElement('div')
+          sep.style.cssText = 'height:1px;background:#2a2a2a;margin:4px 0'
+          menu.appendChild(sep); return
+        }
+        const btn = document.createElement('div')
+        btn.style.cssText = `padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;color:${it.danger ? '#ff6b6b' : '#ddd'};border-radius:4px;margin:0 4px`
+        btn.innerHTML = `<span style="font-size:13px;width:16px;text-align:center">${it.icon}</span><span>${it.label}</span>`
+        btn.addEventListener('mouseenter', () => { btn.style.background = it.danger ? '#3a1a1a' : '#2a2a2a' })
+        btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+        btn.addEventListener('click', () => { removeContextMenu(); it.action() })
+        menu.appendChild(btn)
+      })
+      document.body.appendChild(menu)
+      setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 50)
+    })
+  }
 })
