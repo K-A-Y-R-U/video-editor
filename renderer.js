@@ -1,3 +1,37 @@
+// ── renderer.js — Punto de entrada ───────────────────────────────────────────
+// Este archivo solo orquesta el arranque de la aplicación.
+// Toda la lógica está distribuida en los módulos de /renderer/.
+//
+// Estructura de módulos:
+//   state.js       → estado global mutable
+//   utils.js       → helpers (fmt, clamp, setStatus, …)
+//   history.js     → undo / redo
+//   markers.js     → marcadores de loop en el timeline
+//   transitions.js → panel y animación de transiciones
+//   effects.js     → color, filtros, transformación, trim, velocidad
+//   media.js       → librería de medios y preview
+//   timeline.js    → timeline, clips, drag & drop, playhead
+//   playback.js    → cola de reproducción multi-clip
+//   export.js      → exportar con ffmpeg
+//   events.js      → todos los addEventListener
+
+import { renderTimeline } from './renderer/timeline.js'
+import { setRenderTimeline } from './renderer/history.js'
+import { initEvents } from './renderer/events.js'
+
+setRenderTimeline(renderTimeline)
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderTimeline()
+  initEvents()
+})
+
+/* ============================================================================
+   ARCHIVO ORIGINAL PRESERVADO A CONTINUACIÓN COMO REFERENCIA
+   El código de abajo NO se ejecuta (es código muerto).
+   Una vez verificado que los módulos funcionan, este bloque puede eliminarse.
+   ============================================================================ */
+if (false) {
 // ── Estado global ─────────────────────────────────────────────────────────────
 const vid = document.getElementById('main-video')
 let mediaItems = []
@@ -2003,4 +2037,5 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 50)
     })
   }
-})
+})}
+
