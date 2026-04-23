@@ -165,16 +165,25 @@ export function applyTransition(clipId, type, duration) {
 // ── Animación de transición en el preview ─────────────────────────────────────
 
 /** Limpia cualquier animación de transición en curso */
-function clearTransitionAnim() {
+export function clearTransitionAnimPublic() {
   if (S.activeTransitionAnim) {
     clearInterval(S.activeTransitionAnim)
     S.setActiveTransitionAnim(null)
-    S.vid.style.opacity   = '1'
+    S.vid.style.opacity        = '1'
+    S.vid.style.clipPath       = ''
+    S.vid.style.imageRendering = 'auto'
     S.vid.style.transform = S.vid.style.transform
       .replace(/translate[XY]?\([^)]+\)/g, '').trim() || ''
     S.vid.style.filter = S.vid.style.filter
-      .replace(/blur\([^)]+\)/g, '').trim() || ''
+      .replace(/blur\([^)]+\)/g, '')
+      .replace(/saturate\([^)]+\)/g, '')
+      .replace(/contrast\([^)]+\)/g, '')
+      .trim()
   }
+}
+
+function clearTransitionAnim() {
+  clearTransitionAnimPublic()
 }
 
 /** Reproduce la animación de una transición en el elemento de video */
@@ -190,7 +199,7 @@ export function playTransition(type, duration, onDone) {
     const p    = frame / frames          // 0 → 1
     const ease = 1 - Math.pow(1 - p, 3) // ease-out cúbico
 
-    applyTransitionFrame(type, p, ease)
+    applyTransitionFrame(type, p, ease, frame)
 
     if (frame >= frames) {
       clearInterval(anim)
@@ -204,75 +213,166 @@ export function playTransition(type, duration, onDone) {
 }
 
 /** Aplica un frame de la animación de transición al elemento de video */
-function applyTransitionFrame(type, p, ease) {
+function applyTransitionFrame(type, p, ease, frame) {
   const v = S.vid
   switch (type) {
+
+    // ── Básico ────────────────────────────────────────────────────────────────
     case 'fade':
       v.style.opacity = p.toString()
       break
+
     case 'fadeblack':
-      v.style.opacity = p < 0.5 ? (p * 2).toString() : '1'
-      if (p < 0.5) setFilter(v, `brightness(${p * 2})`)
+      if (p < 0.5) {
+        // Primera mitad: oscurece hasta negro
+        setFilter(v, `brightness(${p * 2})`)
+        v.style.opacity = '1'
+      } else {
+        // Segunda mitad: aclara desde negro
+        setFilter(v, `brightness(${(p - 0.5) * 2})`)
+        v.style.opacity = '1'
+      }
       break
+
     case 'fadewhite':
-      v.style.opacity = p.toString()
-      setFilter(v, `brightness(${2 - ease})`)
+      if (p < 0.5) {
+        // Primera mitad: sobreexpone a blanco
+        setFilter(v, `brightness(${1 + (0.5 - p) * 4})`)
+        v.style.opacity = '1'
+      } else {
+        // Segunda mitad: vuelve a normal
+        setFilter(v, `brightness(${1 + (p - 0.5) * 0})`)
+        v.style.opacity = p.toString()
+      }
       break
-    case 'flash':
-      v.style.opacity = p < 0.3 ? '0' : p.toString()
+
+    case 'flash': {
+      // Flash blanco intenso al inicio que se desvanece
+      const flashIntensity = Math.max(0, 1 - p * 3)
+      setFilter(v, `brightness(${1 + flashIntensity * 8})`)
+      v.style.opacity = p < 0.15 ? (p / 0.15).toString() : '1'
       break
+    }
+
+    // ── Movimiento ────────────────────────────────────────────────────────────
     case 'slideleft':
       setTranslateX(v, (1 - ease) * -100)
-      v.style.opacity = p.toString()
+      v.style.opacity = '1'
       break
+
     case 'slideright':
       setTranslateX(v, (1 - ease) * 100)
-      v.style.opacity = p.toString()
+      v.style.opacity = '1'
       break
+
     case 'slideup':
       setTranslateY(v, (1 - ease) * -100)
-      v.style.opacity = p.toString()
+      v.style.opacity = '1'
       break
+
     case 'slidedown':
       setTranslateY(v, (1 - ease) * 100)
+      v.style.opacity = '1'
+      break
+
+    case 'wipeleft':
+      v.style.clipPath = `inset(0 ${((1 - ease) * 100).toFixed(1)}% 0 0)`
+      v.style.opacity  = '1'
+      break
+
+    case 'wiperight':
+      v.style.clipPath = `inset(0 0 0 ${((1 - ease) * 100).toFixed(1)}%)`
+      v.style.opacity  = '1'
+      break
+
+    case 'wipeup':
+      v.style.clipPath = `inset(${((1 - ease) * 100).toFixed(1)}% 0 0 0)`
+      v.style.opacity  = '1'
+      break
+
+    case 'wipedown':
+      v.style.clipPath = `inset(0 0 ${((1 - ease) * 100).toFixed(1)}% 0)`
+      v.style.opacity  = '1'
+      break
+
+    // ── Zoom ──────────────────────────────────────────────────────────────────
+    case 'zoomin':
+      setScale(v, 0.5 + ease * 0.5)
       v.style.opacity = p.toString()
       break
-    case 'wipeleft': case 'wiperight': case 'wipeup': case 'wipedown':
+
+    case 'zoomout':
+      setScale(v, 1.6 - ease * 0.6)
+      v.style.opacity = p.toString()
+      break
+
+    case 'zoomfade':
+      setScale(v, 0.8 + ease * 0.2)
       v.style.opacity = ease.toString()
       break
-    case 'zoomin':
-      setScale(v, 0.7 + ease * 0.3)
-      v.style.opacity = p.toString()
-      break
-    case 'zoomout':
-      setScale(v, 1.4 - ease * 0.4)
-      v.style.opacity = p.toString()
-      break
-    case 'zoomfade':
-      setScale(v, 0.85 + ease * 0.15)
-      v.style.opacity = p.toString()
-      break
+
+    // ── Distorsión ────────────────────────────────────────────────────────────
     case 'blur':
-      setFilter(v, `blur(${(1 - ease) * 20}px)`)
+      setFilter(v, `blur(${(1 - ease) * 24}px)`)
       v.style.opacity = p.toString()
       break
+
     case 'glitch':
       if (frame % 3 === 0) {
-        setTranslateX(v, (Math.random() - 0.5) * 20 * (1 - ease))
-        setFilter(v, `hue-rotate(${Math.random() * 360 * (1 - ease)}deg)`)
+        const strength = (1 - ease) * 30
+        setTranslateX(v, (Math.random() - 0.5) * strength)
+        setTranslateY(v, (Math.random() - 0.5) * strength * 0.3)
+        setFilter(v,
+          `hue-rotate(${Math.random() * 360 * (1 - ease)}deg) ` +
+          `saturate(${1 + Math.random() * 3 * (1 - ease)}) ` +
+          `contrast(${1 + Math.random() * 1.5 * (1 - ease)})`
+        )
       }
       v.style.opacity = p.toString()
       break
-    case 'pixelize':
-      v.style.opacity = p.toString()
+
+    case 'pixelize': {
+      // Simula pixelado con blur escalonado + escala extrema + reversión
+      const maxPx   = 40                          // píxeles máximos de blur
+      const phase   = p < 0.5 ? p * 2 : (1 - p) * 2  // 0→1→0
+      const blurPx  = phase * maxPx
+      const scaleV  = 1 - phase * 0.05            // ligera contracción en el pico
+      setFilter(v, `blur(${blurPx.toFixed(1)}px) contrast(${(1 + phase * 4).toFixed(2)}) saturate(${(1 + phase * 1.5).toFixed(2)})`)
+      setScale(v, scaleV)
+      v.style.opacity = '1'
+      v.style.imageRendering = phase > 0.1 ? 'pixelated' : 'auto'
       break
+    }
+
     case 'spin':
-      setRotate(v, (1 - ease) * 180)
+      setRotate(v, (1 - ease) * 270)
+      setScale(v, 0.3 + ease * 0.7)
       v.style.opacity = p.toString()
       break
-    case 'dissolve': case 'radial': case 'circlecrop':
+
+    // ── Luz ───────────────────────────────────────────────────────────────────
+    case 'dissolve':
+      // Desenfoque + saturación decreciente simula disolución orgánica
+      setFilter(v, `blur(${(1 - ease) * 6}px) saturate(${ease.toFixed(2)})`)
       v.style.opacity = ease.toString()
       break
+
+    case 'radial': {
+      // Máscara circular que se expande desde el centro
+      const pct = (ease * 100).toFixed(1)
+      v.style.clipPath = `circle(${pct}% at 50% 50%)`
+      v.style.opacity  = '1'
+      break
+    }
+
+    case 'circlecrop': {
+      // Círculo que crece con borde suavizado usando opacity adicional
+      const pct2 = (ease * 71).toFixed(1)   // 71% = esquinas del 16:9
+      v.style.clipPath = `circle(${pct2}% at 50% 50%)`
+      v.style.opacity  = Math.min(1, ease * 2).toString()
+      break
+    }
+
     default:
       v.style.opacity = p.toString()
   }
@@ -308,7 +408,9 @@ function setFilter(el, f) {
 }
 function cleanTransitionStyles() {
   const v = S.vid
-  v.style.opacity   = '1'
+  v.style.opacity        = '1'
+  v.style.clipPath       = ''
+  v.style.imageRendering = 'auto'
   v.style.transform = (v.style.transform || '')
     .replace(/translateX\([^)]+\)/g, '')
     .replace(/translateY\([^)]+\)/g, '')
@@ -319,5 +421,7 @@ function cleanTransitionStyles() {
     .replace(/blur\([^)]+\)/g, '')
     .replace(/brightness\([^)]+\)/g, '')
     .replace(/hue-rotate\([^)]+\)/g, '')
+    .replace(/saturate\([^)]+\)/g, '')
+    .replace(/contrast\([^)]+\)/g, '')
     .trim()
 }

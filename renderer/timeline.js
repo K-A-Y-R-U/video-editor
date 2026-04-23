@@ -198,7 +198,42 @@ export function selectClip(id) {
   const ind     = document.getElementById('clip-indicator')
   const indName = document.getElementById('clip-indicator-name')
   if (ind) { ind.style.display = 'flex'; indName.textContent = c.name }
+
+  // Mostrar badge de transición en el preview si este clip tiene una asignada
+  updateTransitionBadge(c.id)
+
   setStatus(`Seleccionado: ${c.name}`)
+}
+
+/** Muestra/oculta el badge de transición en la esquina del preview */
+export function updateTransitionBadge(clipId) {
+  let badge = document.getElementById('preview-transition-badge')
+
+  const tr = clipId ? S.transitions[clipId] : null
+
+  if (!tr) {
+    if (badge) badge.style.display = 'none'
+    return
+  }
+
+  // Crear el badge si no existe
+  if (!badge) {
+    badge = document.createElement('div')
+    badge.id = 'preview-transition-badge'
+    badge.style.cssText = [
+      'position:absolute', 'top:8px', 'left:8px', 'z-index:20',
+      'background:rgba(0,0,0,0.72)', 'border:1.5px solid var(--accent,#f7a84f)',
+      'color:var(--accent,#f7a84f)', 'font-size:11px', 'font-weight:600',
+      'padding:3px 9px', 'border-radius:20px', 'pointer-events:none',
+      'display:flex', 'align-items:center', 'gap:5px', 'letter-spacing:0.3px'
+    ].join(';')
+    // Buscar el contenedor del preview
+    const container = S.vid.parentNode
+    if (container) container.appendChild(badge)
+  }
+
+  badge.innerHTML = `<span style="font-size:13px">⇄</span> ${tr.type} <span style="opacity:0.7;font-weight:400">${tr.duration.toFixed(1)}s</span>`
+  badge.style.display = 'flex'
 }
 
 // ── Operaciones de edición ────────────────────────────────────────────────────

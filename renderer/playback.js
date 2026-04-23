@@ -55,6 +55,9 @@ export function togglePlay() {
     S.vid.pause()
     S.setIsPlayingQueue(false)
     document.getElementById('play-btn').textContent = '▶'
+    // Asegurar que el video sea visible si se pausa durante una transición
+    S.vid.style.opacity = '1'
+    import('./transitions.js').then(tr => tr.clearTransitionAnimPublic())
     return
   }
 
@@ -76,6 +79,8 @@ export function playClipAt(index) {
   if (index >= S.playQueue.length) {
     S.setIsPlayingQueue(false)
     document.getElementById('play-btn').textContent = '▶'
+    // Asegurar visibilidad al terminar
+    S.vid.style.opacity = '1'
     setStatus('Reproducción terminada')
     return
   }
@@ -100,18 +105,29 @@ export function playClipAt(index) {
   } else {
     const previewImg = document.getElementById('preview-img')
     if (previewImg) previewImg.style.display = 'none'
-    S.vid.style.display = 'block'
+
+    // Cancelar cualquier onloadedmetadata pendiente del clip anterior
+    S.vid.onloadedmetadata = null
+
+    S.vid.style.display  = 'block'
+    S.vid.style.opacity  = '1'   // Garantizar visibilidad antes de cargar
     S.vid.src = 'file://' + c.path
     document.getElementById('no-video').style.display = 'none'
     S.vid.playbackRate = parseFloat(document.getElementById('speed-sl').value) / 100
+
     S.vid.onloadedmetadata = () => {
       S.vid.currentTime = c.start
       const tr = S.transitions[c._clipId || c.id]
       if (tr && index > 0) {
+        // Iniciar con opacity 0 solo justo antes de la transición
         S.vid.style.opacity = '0'
         S.vid.play().catch(err => console.warn('play error:', err))
-        playTransition(tr.type, tr.duration)
+        playTransition(tr.type, tr.duration, () => {
+          // onDone: garantizar que quede completamente visible al terminar
+          S.vid.style.opacity = '1'
+        })
       } else {
+        S.vid.style.opacity = '1'
         S.vid.play().catch(err => console.warn('play error:', err))
       }
     }

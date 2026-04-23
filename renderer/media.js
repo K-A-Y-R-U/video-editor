@@ -154,6 +154,8 @@ export function loadMedia(filePath, startAt) {
     previewImg.style.display = 'block'
     document.getElementById('no-video').style.display = 'none'
     updateTimeDisplay()
+    // Reaplicar estilos del clip seleccionado
+    import('./effects.js').then(E => E.applyVideoStyle())
   } else {
     if (previewImg) previewImg.style.display = 'none'
     S.vid.style.display = 'block'
@@ -163,6 +165,8 @@ export function loadMedia(filePath, startAt) {
     S.vid.onloadedmetadata = () => {
       if (startAt > 0) S.vid.currentTime = startAt
       updateTimeDisplay()
+      // Reaplicar estilos DESPUÉS de que el video cargue (el navegador resetea transform/filter al cambiar src)
+      import('./effects.js').then(E => E.applyVideoStyle())
     }
   }
 }
