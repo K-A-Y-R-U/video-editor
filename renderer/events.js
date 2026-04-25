@@ -230,11 +230,17 @@ export function initEvents() {
 
       const generalItems = [
         { icon: '📁', label: 'Importar archivos', action: importFiles },
+        { icon: '🗂️', label: 'Nueva carpeta', action: () => {
+          import('./media.js').then(M => M.createFolder('Nueva carpeta'))
+        }},
         { divider: true },
         { icon: '✕', label: 'Limpiar librería', danger: true, action: () => {
           if (confirm('¿Eliminar todos los archivos de la librería?')) {
             S.setMediaItems([])
             S.setClips([])
+            S.setFolders([])
+            S.setCurrentFolderId(null)
+            S.setFolderStack([])
             S.setSelectedMediaIndex(-1)
             renderMediaPanel()
             renderTimeline()

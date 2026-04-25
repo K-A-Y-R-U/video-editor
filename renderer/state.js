@@ -21,18 +21,24 @@ export let playQueueIndex = 0
 export let isPlayingQueue = false
 
 // Drag state
-export let drag        = null   // arrastrar clips en el timeline
-export let libraryDrag = null   // arrastrar desde la librería
+export let drag        = null
+export let libraryDrag = null
 
 // Marcadores de loop
 export let markers    = []
 export let markerDrag = null
 
 // Transiciones
-// transitions[clipId] = { type, duration }
 export let transitions = {}
 export let activeTransitionAnim = null
 export let panelSelectedTransitionClipId = null
+
+// ── Carpetas de librería ──────────────────────────────────────────────────────
+// folders: [{ id, name, open }]
+// mediaItems[i].folderId = id de la carpeta (null = raíz)
+export let folders          = []
+export let currentFolderId  = null   // null = vista raíz
+export let folderStack      = []     // historial de navegación: [{ id, name }, ...]
 
 // ── Setters (para que los módulos puedan mutar el estado compartido) ──────────
 
@@ -60,3 +66,7 @@ export function setMarkerDrag(v)  { markerDrag = v }
 export function setTransitions(v) { transitions = v }
 export function setActiveTransitionAnim(v) { activeTransitionAnim = v }
 export function setPanelSelectedTransitionClipId(v) { panelSelectedTransitionClipId = v }
+
+export function setFolders(v)         { folders = v }
+export function setCurrentFolderId(v) { currentFolderId = v }
+export function setFolderStack(v)     { folderStack = v }
