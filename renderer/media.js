@@ -7,14 +7,44 @@ import { fmt, isImagePath, defaultClipProps, setStatus } from './utils.js'
 import { saveState } from './history.js'
 import { loadPropsToUI, updateProgressMarkers } from './effects.js'
 
+// ── FIX: Esperar a que window.api esté disponible (Windows puede tardar) ──────
+// En Windows el contextBridge a veces no está listo al primer intento.
+// Esta función reintenta hasta 50 veces con 50ms de pausa entre intentos.
+
+function waitForApi(timeout = 2500) {
+  return new Promise((resolve, reject) => {
+    if (window.api) return resolve(window.api)
+    const interval = 50
+    let elapsed = 0
+    const timer = setInterval(() => {
+      if (window.api) {
+        clearInterval(timer)
+        resolve(window.api)
+      } else {
+        elapsed += interval
+        if (elapsed >= timeout) {
+          clearInterval(timer)
+          reject(new Error('API no disponible después de ' + timeout + 'ms — revisa preload.js'))
+        }
+      }
+    }, interval)
+  })
+}
+
 // ── Importar archivos ─────────────────────────────────────────────────────────
 
 export async function importFiles() {
-  if (!window.api) { alert('API no disponible — revisa preload.js'); return }
+  let api
+  try {
+    api = await waitForApi()
+  } catch (e) {
+    alert(e.message)
+    return
+  }
 
   let paths
   try {
-    paths = await window.api.openFile()
+    paths = await api.openFile()
   } catch (e) {
     setStatus('Error: ' + e)
     return
@@ -29,7 +59,7 @@ export async function importFiles() {
       S.mediaItems.push({ path: p, name, duration: 5, isImage: true, folderId })
     } else {
       try {
-        const meta = await window.api.getMetadata(p)
+        const meta = await api.getMetadata(p)
         const vs   = meta.streams.find(s => s.codec_type === 'video')
         const dur  = parseFloat(meta.format.duration || (vs && vs.duration) || 0)
         S.mediaItems.push({ path: p, name, duration: dur, isImage: false, folderId })

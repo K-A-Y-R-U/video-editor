@@ -70,6 +70,9 @@ function createWindow() {
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => app.quit())
 
+// FIX: expone os.tmpdir() al renderer de forma segura via IPC (el sandbox no permite require('os'))
+ipcMain.handle('get-tmpdir', () => os.tmpdir())
+
 ipcMain.handle('open-file', async () => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
