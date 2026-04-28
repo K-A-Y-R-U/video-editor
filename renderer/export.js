@@ -40,11 +40,15 @@ export async function startExport() {
         muteAudio: noAudio
       })
     } else {
+      // FIX: Obtener la carpeta temporal del sistema operativo
+      // En Windows /tmp/ no existe; os.tmpdir() devuelve C:\Users\...\AppData\Local\Temp
+      const tmpDir = window.api.getTmpDir()
       const tmpFiles = []
 
       for (let i = 0; i < ordered.length; i++) {
         const c      = ordered[i]
-        const tmpOut = `/tmp/ve_clip_${Date.now()}_${i}.mp4`
+        // FIX: usar tmpDir en lugar de la ruta hardcodeada '/tmp/'
+        const tmpOut = `${tmpDir}/ve_clip_${Date.now()}_${i}.mp4`
         tmpFiles.push(tmpOut)
         setStatus(`Procesando clip ${i + 1} de ${total}: ${c.name}`)
         window.api.onProgress(pct => {
