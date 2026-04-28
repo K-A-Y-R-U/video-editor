@@ -1,17 +1,18 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
-const path = require('path')
+const path   = require('path')
+const os     = require('os')
 const ffmpeg = require('fluent-ffmpeg')
 const { execSync, spawn } = require('child_process')
-const fs = require('fs')
+const fs     = require('fs')
 
-// Solo en Linux usar ozone-platform x11
+// Solo aplicar en Linux (en Windows/Mac causa problemas)
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform', 'x11')
 }
 
 // ── Binarios empaquetados dentro de la app ───────────────────────────────────
 function findBin(name) {
-  const platform = process.platform
+  const platform = process.platform  // 'win32' | 'linux' | 'darwin'
   const ext      = platform === 'win32' ? '.exe' : ''
   const binName  = name + ext
 
@@ -19,17 +20,17 @@ function findBin(name) {
   const appBin = path.join(process.resourcesPath || __dirname, 'bin', binName)
   try { fs.accessSync(appBin, fs.constants.X_OK); return appBin } catch(e) {}
 
-  // 2. Carpeta bin/ del proyecto en desarrollo
-  const devBin = path.join(__dirname, 'bin', platform, binName)
+  // 2. Carpeta bin/ del proyecto (desarrollo)
+  const devBin = path.join(__dirname, 'bin', platform === 'win32' ? 'win' : 'linux', binName)
   try { fs.accessSync(devBin, fs.constants.X_OK); return devBin } catch(e) {}
 
-  // 3. PATH del sistema
+  // 3. PATH del sistema (fallback)
   try {
     const cmd = platform === 'win32' ? `where ${name}` : `which ${name}`
     return execSync(cmd).toString().trim().split('\n')[0]
   } catch(e) {}
 
-  // 4. Rutas comunes Linux/Mac
+  // 4. Rutas fijas Linux/Mac
   for (const p of [`/usr/bin/${name}`, `/usr/local/bin/${name}`, `/bin/${name}`]) {
     try { fs.accessSync(p); return p } catch(e) {}
   }
@@ -55,11 +56,15 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false
     },
-    title: 'Video Editor',
+    title: 'VideoEdit',
     backgroundColor: '#1a1a1a'
   })
   mainWindow.loadFile('index.html')
-  if (!app.isPackaged) mainWindow.webContents.openDevTools()
+
+  // DevTools solo en desarrollo
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+    mainWindow.webContents.openDevTools()
+  }
 }
 
 app.whenReady().then(createWindow)
@@ -102,7 +107,7 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject('FFmpeg no encontrado.')
 
-    console.log(`[export-video] muteAudio=${muteAudio} input=${input.split('/').pop()}`)
+    console.log(`[export-video] muteAudio=${muteAudio} input=${path.basename(input)}`)
     const args = ['-y']
     if (startTime > 0) { args.push('-ss', String(startTime)) }
     args.push('-i', input)
@@ -190,12 +195,11 @@ function probeFile(filePath) {
   })
 }
 
+// ── os.tmpdir() funciona en Windows, Linux y Mac ──────────────────────────────
 function tmpPath(tag) {
-  return `/tmp/ve_${tag}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`
+  return path.join(os.tmpdir(), `ve_${tag}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`)
 }
 
-// Normaliza un clip: resolución fija, fps=30, yuv420p, audio stereo aac
-// Esto hace que TODOS los clips sean idénticos en formato antes de unirlos
 async function normalizeClip(inputFile, hasAudio, targetW, targetH) {
   const out = tmpPath('norm')
   const vf = [
@@ -221,9 +225,8 @@ async function normalizeClip(inputFile, hasAudio, targetW, targetH) {
   return out
 }
 
-// xfade entre dos clips normalizados
 async function applyXfade(clipA, clipB, xfadeType, trDur, durA) {
-  const out = tmpPath('xf')
+  const out    = tmpPath('xf')
   const offset = Math.max(0.01, durA - trDur)
   const fc = [
     `[0:v][1:v]xfade=transition=${xfadeType}:duration=${trDur.toFixed(3)}:offset=${offset.toFixed(3)}[vout]`,
@@ -240,11 +243,13 @@ async function applyXfade(clipA, clipB, xfadeType, trDur, durA) {
   return out
 }
 
-// concat simple entre dos clips normalizados (pueden usar -c copy porque son idénticos)
 async function concatTwo(clipA, clipB) {
-  const out = tmpPath('cat')
+  const out      = tmpPath('cat')
   const listPath = out + '.txt'
-  fs.writeFileSync(listPath, `file '${clipA}'\nfile '${clipB}'`)
+  // Usar rutas con forward slashes para el concat de ffmpeg (funciona en Win también)
+  const pathA = clipA.replace(/\\/g, '/')
+  const pathB = clipB.replace(/\\/g, '/')
+  fs.writeFileSync(listPath, `file '${pathA}'\nfile '${pathB}'`)
   try {
     await runFFmpeg([
       '-f', 'concat', '-safe', '0', '-i', listPath,
@@ -259,7 +264,7 @@ async function concatTwo(clipA, clipB) {
 ipcMain.handle('concat-videos', async (event, { files, output, transitions }) => {
   const allTmp = []
   const cleanup = () => {
-    files.forEach(f => { try { fs.unlinkSync(f) } catch(e) {} })
+    files.forEach(f  => { try { fs.unlinkSync(f) } catch(e) {} })
     allTmp.forEach(f => { try { fs.unlinkSync(f) } catch(e) {} })
   }
 
@@ -273,17 +278,16 @@ ipcMain.handle('concat-videos', async (event, { files, output, transitions }) =>
       return { ok: true }
     }
 
-    const send = pct => event.sender.send('export-progress', Math.min(99, Math.round(pct)))
+    const send  = pct => event.sender.send('export-progress', Math.min(99, Math.round(pct)))
     const total = files.length
 
-    // 1. Probe todos
     send(2)
-    const infos = await Promise.all(files.map(f => probeFile(f)))
+    const infos   = await Promise.all(files.map(f => probeFile(f)))
     const targetW = infos[0].width  || 1920
     const targetH = infos[0].height || 1080
     console.log(`[main] target: ${targetW}x${targetH}, clips: ${total}`)
 
-    // 2. Normalizar todos los clips al mismo formato
+    // Normalizar todos los clips al mismo formato
     const normalized = []
     for (let i = 0; i < files.length; i++) {
       send(5 + (i / total) * 40)
@@ -294,9 +298,9 @@ ipcMain.handle('concat-videos', async (event, { files, output, transitions }) =>
       normalized.push({ path: normed, duration: ni.duration })
     }
 
-    // 3. Encadenar pares
+    // Encadenar pares con o sin transición
     let running = normalized[0].path
-    let runDur   = normalized[0].duration
+    let runDur  = normalized[0].duration
 
     for (let i = 1; i < normalized.length; i++) {
       send(45 + (i / total) * 50)
@@ -305,20 +309,19 @@ ipcMain.handle('concat-videos', async (event, { files, output, transitions }) =>
       let result
 
       if (tr && tr.type) {
-        const xtype  = XFADE_MAP[tr.type] || 'fade'
-        const maxTr  = Math.min(runDur - 0.1, next.duration - 0.1, 3.0)
-        const trDur  = Math.max(0.1, Math.min(tr.duration || 0.5, maxTr))
+        const xtype = XFADE_MAP[tr.type] || 'fade'
+        const maxTr = Math.min(runDur - 0.1, next.duration - 0.1, 3.0)
+        const trDur = Math.max(0.1, Math.min(tr.duration || 0.5, maxTr))
         console.log(`[main] xfade ${i-1}→${i}: ${xtype} ${trDur}s`)
-        result  = await applyXfade(running, next.path, xtype, trDur, runDur)
-        runDur  = runDur + next.duration - trDur
+        result = await applyXfade(running, next.path, xtype, trDur, runDur)
+        runDur = runDur + next.duration - trDur
       } else {
         console.log(`[main] concat ${i-1}→${i}`)
-        result  = await concatTwo(running, next.path)
-        runDur  = runDur + next.duration
+        result = await concatTwo(running, next.path)
+        runDur = runDur + next.duration
       }
 
       allTmp.push(result)
-      // Borrar el running anterior si ya no es el primero normalizado
       if (i > 1) {
         try { fs.unlinkSync(running) } catch(e) {}
         const idx = allTmp.indexOf(running)
@@ -327,7 +330,6 @@ ipcMain.handle('concat-videos', async (event, { files, output, transitions }) =>
       running = result
     }
 
-    // 4. Copiar al destino final (renameSync falla entre distintas particiones)
     fs.copyFileSync(running, output)
     try { fs.unlinkSync(running) } catch(e) {}
     const idx = allTmp.indexOf(running)
