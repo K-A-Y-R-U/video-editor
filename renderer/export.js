@@ -42,7 +42,7 @@ export async function startExport() {
     } else {
       // FIX: Obtener la carpeta temporal del sistema operativo
       // En Windows /tmp/ no existe; os.tmpdir() devuelve C:\Users\...\AppData\Local\Temp
-      const tmpDir = window.api.getTmpDir()
+      const tmpDir = await window.api.getTmpDir()  // ← FIX: await porque getTmpDir es async (IPC)
       const tmpFiles = []
 
       for (let i = 0; i < ordered.length; i++) {
