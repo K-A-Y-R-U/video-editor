@@ -5,7 +5,9 @@
   "main": "main.js",
   "author": "K-A-Y-R-U",
   "scripts": {
+    "setup":         "node setup-ffmpeg.js",
     "start":         "electron --ozone-platform=x11 .",
+    "start:win":     "electron .",
     "build:linux":   "electron-builder --linux",
     "build:win":     "electron-builder --win",
     "build:mac":     "electron-builder --mac",
@@ -27,8 +29,8 @@
       "!dist/**",
       "!*.exe",
       "!*.dll",
-      "!bin/**",
-      "!node_modules/.cache/**"
+      "!node_modules/.cache/**",
+      "!setup-ffmpeg.js"
     ],
     "linux": {
       "target": ["AppImage", "deb"],
