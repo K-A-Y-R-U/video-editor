@@ -7,7 +7,8 @@
     "start": "electron --ozone-platform=x11 .",
     "build:linux":   "electron-builder --linux",
     "build:windows": "electron-builder --win",
-    "build:mac":     "electron-builder --mac"
+    "build:mac":     "electron-builder --mac",
+    "release:win":   "electron-builder --win --publish always"
   },
   "devDependencies": {
     "electron": "^36.0.0",
@@ -19,11 +20,23 @@
   "build": {
     "appId": "com.kayru.videoeditor",
     "productName": "VideoEdit",
+    "publish": {
+      "provider": "github",
+      "owner": "K-A-Y-R-U",
+      "repo": "video-editor"
+    },
     "extraFiles": [
       {
-        "from": "bin/${os}",
+        "from": "bin/win",
         "to": "resources/bin",
-        "filter": ["**/*"]
+        "filter": ["*.exe"],
+        "platform": ["win"]
+      },
+      {
+        "from": "bin/linux",
+        "to": "resources/bin",
+        "filter": ["ffmpeg", "ffprobe"],
+        "platform": ["linux"]
       }
     ],
     "linux": {

@@ -4,29 +4,33 @@ const ffmpeg = require('fluent-ffmpeg')
 const { execSync, spawn } = require('child_process')
 const fs = require('fs')
 
-app.commandLine.appendSwitch('ozone-platform', 'x11')
+// Solo en Linux usar ozone-platform x11
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11')
+}
 
 // ── Binarios empaquetados dentro de la app ───────────────────────────────────
-// Busca primero en resources/bin/ (empaquetado con electron-builder),
-// luego en el sistema como fallback.
 function findBin(name) {
-  const platform = process.platform  // 'win32' | 'linux' | 'darwin'
+  const platform = process.platform
   const ext      = platform === 'win32' ? '.exe' : ''
   const binName  = name + ext
 
-  // 1. Dentro del paquete de la app (electron-builder extraFiles)
+  // 1. Dentro del paquete (electron-builder extraFiles → resources/bin/)
   const appBin = path.join(process.resourcesPath || __dirname, 'bin', binName)
   try { fs.accessSync(appBin, fs.constants.X_OK); return appBin } catch(e) {}
 
-  // 2. Junto al ejecutable en dev (carpeta bin/ del proyecto)
-  const devBin = path.join(__dirname, 'bin', binName)
+  // 2. Carpeta bin/ del proyecto en desarrollo
+  const devBin = path.join(__dirname, 'bin', platform, binName)
   try { fs.accessSync(devBin, fs.constants.X_OK); return devBin } catch(e) {}
 
-  // 3. En el PATH del sistema (fallback)
-  try { return execSync(`which ${name} 2>/dev/null || where ${name} 2>nul`).toString().trim().split('\n')[0] } catch(e) {}
+  // 3. PATH del sistema
+  try {
+    const cmd = platform === 'win32' ? `where ${name}` : `which ${name}`
+    return execSync(cmd).toString().trim().split('\n')[0]
+  } catch(e) {}
 
-  const fallbacks = [`/usr/bin/${name}`, `/usr/local/bin/${name}`, `/bin/${name}`]
-  for (const p of fallbacks) {
+  // 4. Rutas comunes Linux/Mac
+  for (const p of [`/usr/bin/${name}`, `/usr/local/bin/${name}`, `/bin/${name}`]) {
     try { fs.accessSync(p); return p } catch(e) {}
   }
   return null
@@ -55,7 +59,7 @@ function createWindow() {
     backgroundColor: '#1a1a1a'
   })
   mainWindow.loadFile('index.html')
-  mainWindow.webContents.openDevTools()
+  if (!app.isPackaged) mainWindow.webContents.openDevTools()
 }
 
 app.whenReady().then(createWindow)
