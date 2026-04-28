@@ -1,14 +1,16 @@
 {
   "name": "video-editor",
   "version": "1.0.0",
-  "description": "Editor de video",
+  "description": "Editor de video open source",
   "main": "main.js",
+  "author": "K-A-Y-R-U",
   "scripts": {
-    "start": "electron --ozone-platform=x11 .",
+    "start":         "electron --ozone-platform=x11 .",
     "build:linux":   "electron-builder --linux",
-    "build:windows": "electron-builder --win",
+    "build:win":     "electron-builder --win",
     "build:mac":     "electron-builder --mac",
-    "release:win":   "electron-builder --win --publish always"
+    "release:win":   "electron-builder --win --publish always",
+    "release:linux": "electron-builder --linux --publish always"
   },
   "devDependencies": {
     "electron": "^36.0.0",
@@ -20,36 +22,51 @@
   "build": {
     "appId": "com.kayru.videoeditor",
     "productName": "VideoEdit",
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!*.exe",
+      "!*.dll",
+      "!bin/**",
+      "!node_modules/.cache/**"
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Video",
+      "extraFiles": [
+        {
+          "from": "bin/linux",
+          "to": "resources/bin",
+          "filter": ["**/*"]
+        }
+      ]
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico",
+      "extraFiles": [
+        {
+          "from": "bin/win",
+          "to": "resources/bin",
+          "filter": ["**/*"]
+        }
+      ]
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "extraFiles": [
+        {
+          "from": "bin/mac",
+          "to": "resources/bin",
+          "filter": ["**/*"]
+        }
+      ]
+    },
     "publish": {
       "provider": "github",
       "owner": "K-A-Y-R-U",
       "repo": "video-editor"
-    },
-    "extraFiles": [
-      {
-        "from": "bin/win",
-        "to": "resources/bin",
-        "filter": ["*.exe"],
-        "platform": ["win"]
-      },
-      {
-        "from": "bin/linux",
-        "to": "resources/bin",
-        "filter": ["ffmpeg", "ffprobe"],
-        "platform": ["linux"]
-      }
-    ],
-    "linux": {
-      "target": ["AppImage", "deb"],
-      "category": "Video"
-    },
-    "win": {
-      "target": ["nsis"],
-      "icon": "assets/icon.ico"
-    },
-    "mac": {
-      "target": ["dmg"],
-      "icon": "assets/icon.icns"
     }
   }
 }

@@ -2,3 +2,31 @@ node_modules/
 *.mp4
 *.Archivador.zip
 Archivador.zip
+node_modules/
+
+# Builds de electron-builder — se distribuyen por GitHub Releases, no van al repo
+dist/
+out/
+
+# Binarios de ffmpeg — >100MB, no permitidos en GitHub sin LFS
+*.exe
+*.dll
+bin/
+
+# Videos y temporales
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Zips
+*.zip
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
