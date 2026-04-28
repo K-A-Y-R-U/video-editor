@@ -123,7 +123,7 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
     }
     if (vf.length) { args.push('-vf', vf.join(',')) }
 
-    args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23')
+    args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p')
 
     if (muteAudio) {
       args.push('-map', '0:v:0', '-an')
@@ -218,7 +218,7 @@ async function normalizeClip(inputFile, hasAudio, targetW, targetH) {
   }
   args.push(
     '-vf', vf,
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
     '-map', '0:v:0',
     '-map', hasAudio ? '0:a:0' : '1:a:0',
@@ -239,7 +239,7 @@ async function applyXfade(clipA, clipB, xfadeType, trDur, durA) {
     '-i', clipA, '-i', clipB,
     '-filter_complex', fc,
     '-map', '[vout]', '-map', '[aout]',
-    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
     '-y', out
   ])
