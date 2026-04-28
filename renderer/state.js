@@ -7,6 +7,7 @@ export const vid = document.getElementById('main-video')
 export let mediaItems = []
 export let clips      = []
 export let selectedClip       = null
+export let selectedAudioClip  = null   // id del clip cuyo AUDIO está seleccionado independientemente
 export let selectedMediaIndex = -1
 export let tlZoom  = 80
 export let flipH   = false
@@ -44,7 +45,8 @@ export let folderStack      = []     // historial de navegación: [{ id, name },
 
 export function setMediaItems(v)  { mediaItems = v }
 export function setClips(v)       { clips = v }
-export function setSelectedClip(v){ selectedClip = v }
+export function setSelectedClip(v)     { selectedClip = v }
+export function setSelectedAudioClip(v){ selectedAudioClip = v }
 export function setSelectedMediaIndex(v) { selectedMediaIndex = v }
 export function setTlZoom(v)      { tlZoom = v }
 export function setFlipH(v)       { flipH = v }

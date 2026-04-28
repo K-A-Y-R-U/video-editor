@@ -55,7 +55,7 @@ export function initEvents() {
 
       case 'Delete':
       case 'Backspace':
-        if (S.selectedClip) { e.preventDefault(); deleteClip() }
+        if (S.selectedClip || S.selectedAudioClip) { e.preventDefault(); deleteClip() }
         break
     }
   })

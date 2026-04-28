@@ -55,8 +55,8 @@ export function togglePlay() {
     S.vid.pause()
     S.setIsPlayingQueue(false)
     document.getElementById('play-btn').textContent = '▶'
-    // Asegurar que el video sea visible si se pausa durante una transición
     S.vid.style.opacity = '1'
+    S.vid.muted = false   // restaurar audio al pausar
     import('./transitions.js').then(tr => tr.clearTransitionAnimPublic())
     return
   }
@@ -79,8 +79,8 @@ export function playClipAt(index) {
   if (index >= S.playQueue.length) {
     S.setIsPlayingQueue(false)
     document.getElementById('play-btn').textContent = '▶'
-    // Asegurar visibilidad al terminar
     S.vid.style.opacity = '1'
+    S.vid.muted = false   // restaurar audio al terminar
     setStatus('Reproducción terminada')
     return
   }
@@ -117,6 +117,8 @@ export function playClipAt(index) {
 
     S.vid.onloadedmetadata = () => {
       S.vid.currentTime = c.start
+      // Silenciar si el audio de este clip fue eliminado del timeline
+      S.vid.muted = !!(c.audioNoTrack)
       const tr = S.transitions[c._clipId || c.id]
       if (tr && index > 0) {
         // Iniciar con opacity 0 solo justo antes de la transición

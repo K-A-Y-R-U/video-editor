@@ -94,28 +94,53 @@ ipcMain.handle('get-metadata', async (event, filePath) => {
   })
 })
 
-ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast }) => {
+ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast, muteAudio }) => {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject('FFmpeg no encontrado.')
-    let cmd = ffmpeg(input)
-    if (startTime > 0) cmd = cmd.seekInput(startTime)
-    if (duration > 0)  cmd = cmd.duration(duration)
+
+    console.log(`[export-video] muteAudio=${muteAudio} input=${input.split('/').pop()}`)
+    const args = ['-y']
+    if (startTime > 0) { args.push('-ss', String(startTime)) }
+    args.push('-i', input)
+    if (duration > 0) { args.push('-t', String(duration)) }
+
     const vf = []
     if (speed && speed !== 1) vf.push(`setpts=${(1/speed).toFixed(4)}*PTS`)
     if (brightness || contrast) {
       vf.push(`eq=brightness=${((brightness||0)/100).toFixed(3)}:contrast=${(1+(contrast||0)/100).toFixed(3)}`)
     }
-    if (vf.length) cmd = cmd.videoFilters(vf)
-    if (speed && speed !== 1) {
-      const at = Math.min(Math.max(speed, 0.5), 2.0).toFixed(3)
-      cmd = cmd.audioFilters(`atempo=${at}`)
+    if (vf.length) { args.push('-vf', vf.join(',')) }
+
+    args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23')
+
+    if (muteAudio) {
+      args.push('-map', '0:v:0', '-an')
+    } else {
+      args.push('-map', '0:v:0', '-map', '0:a?')
+      if (speed && speed !== 1) {
+        const at = Math.min(Math.max(speed, 0.5), 2.0).toFixed(3)
+        args.push('-af', `atempo=${at}`)
+      }
+      args.push('-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2')
     }
-    cmd.output(output).videoCodec('libx264').audioCodec('aac')
-      .outputOptions(['-preset', 'fast', '-crf', '23'])
-      .on('progress', p => event.sender.send('export-progress', Math.round(p.percent || 0)))
-      .on('end', () => resolve({ ok: true }))
-      .on('error', e => reject(e.message))
-      .run()
+
+    args.push(output)
+
+    let stderr = ''
+    const proc = spawn(ffmpegPath, args)
+    proc.stderr.on('data', d => {
+      stderr += d.toString()
+      const m = stderr.match(/time=(\d+):(\d+):([\d.]+)/)
+      if (m && duration > 0) {
+        const secs = parseInt(m[1])*3600 + parseInt(m[2])*60 + parseFloat(m[3])
+        const pct  = Math.min(99, Math.round((secs / duration) * 100))
+        event.sender.send('export-progress', pct)
+      }
+    })
+    proc.on('close', code => {
+      if (code === 0) { event.sender.send('export-progress', 100); resolve({ ok: true }) }
+      else reject('FFmpeg error:\n' + stderr.slice(-1000))
+    })
   })
 })
 

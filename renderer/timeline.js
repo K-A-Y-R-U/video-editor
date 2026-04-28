@@ -56,7 +56,7 @@ export function addToTimeline() {
     id, path: m.path, name: m.name,
     start: 0, duration: isImg ? 5 : (m.duration || 10),
     tlStart, tlDuration: clipDuration,
-    isImage: isImg, track: 0, audioTrack: 0, props
+    isImage: isImg, track: 0, audioTrack: 0, audioLinked: true, props
   })
   renderTimeline()
   setStatus(`Clip agregado: ${m.name}`)
@@ -69,6 +69,8 @@ function makeVideoClipEl(c) {
   const width = Math.max(c.tlDuration * S.tlZoom, 20)
   const sel   = S.selectedClip === c.id ? 'selected' : ''
   const icon  = c.isImage ? '🖼' : '🎬'
+  // Indicador visual de desvinculación
+  const linkIcon = c.audioNoTrack ? ' 🔇' : (c.audioLinked === false) ? ' 🔓' : ''
 
   const div = document.createElement('div')
   div.className      = `tl-clip video ${sel}`
@@ -81,7 +83,7 @@ function makeVideoClipEl(c) {
 
   const label = document.createElement('span')
   label.className   = 'tl-clip-label'
-  label.textContent = icon + ' ' + c.name
+  label.textContent = icon + ' ' + c.name + linkIcon
 
   const rh = document.createElement('div')
   rh.className = 'tl-resize-handle right'
@@ -93,23 +95,40 @@ function makeVideoClipEl(c) {
   div.addEventListener('mousedown', e => {
     if (!e.target.classList.contains('tl-resize-handle')) clipMouseDown(e, c.id, 'move')
   })
+  div.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); showClipContextMenu(e.clientX, e.clientY, c.id) })
   return div
 }
 
 function makeAudioClipEl(c) {
-  const left  = c.tlStart * S.tlZoom
-  const width = Math.max(c.tlDuration * S.tlZoom, 20)
-  const sel   = S.selectedClip === c.id ? 'selected' : ''
+  const unlinked = c.audioLinked === false
+  // Posición y tamaño independientes si está desvinculado
+  const audioStart = (unlinked && c.audioTlStart    !== undefined) ? c.audioTlStart    : c.tlStart
+  const audioDur   = (unlinked && c.audioTlDuration !== undefined) ? c.audioTlDuration : c.tlDuration
+  const left  = audioStart * S.tlZoom
+  const width = Math.max(audioDur * S.tlZoom, 20)
+
+  // Selección independiente: si está desvinculado, solo se resalta si selectedAudioClip === c.id
+  // Si está vinculado, sigue selectedClip normal
+  const sel = unlinked
+    ? (S.selectedAudioClip === c.id ? 'selected' : '')
+    : (S.selectedClip === c.id ? 'selected' : '')
 
   const div = document.createElement('div')
   div.className     = `tl-clip audio ${sel}`
   div.style.cssText = `left:${left}px;width:${width}px`
   div.dataset.id    = c.id
-  div.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'move'))
+  div.dataset.audioid = c.id   // identificador para queries de audio
+  div.dataset.isAudio = 'true'
+
+  if (unlinked) {
+    // Audio desvinculado: clic selecciona SOLO el audio, no el video
+    div.addEventListener('mousedown', e => audioClipMouseDown(e, c.id))
+  } else {
+    div.addEventListener('mousedown', e => clipMouseDown(e, c.id, 'move'))
+  }
+  div.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); showClipContextMenu(e.clientX, e.clientY, c.id, true) })
   return div
 }
-
-// ── Renderizar timeline ───────────────────────────────────────────────────────
 
 export function renderTimeline() {
   const totalDur = S.clips.reduce((a, c) => Math.max(a, c.tlStart + c.tlDuration), 10)
@@ -152,7 +171,7 @@ export function renderTimeline() {
     if (trackIdx === 1 && vt2) vt2.appendChild(vEl)
     else vt.appendChild(vEl)
 
-    if (!c.isImage) {
+    if (!c.isImage && !c.audioNoTrack) {
       const aEl = makeAudioClipEl(c)
       if (audioTrackIdx === 1 && at2) at2.appendChild(aEl)
       else at.appendChild(aEl)
@@ -187,6 +206,7 @@ export function renderTimeline() {
 
 export function selectClip(id) {
   S.setSelectedClip(id)
+  S.setSelectedAudioClip(null)   // limpiar selección de audio independiente
   const c = S.clips.find(x => x.id === id)
   if (!c) return
   if (!c.props) c.props = defaultClipProps()
@@ -255,26 +275,63 @@ export function splitClip() {
   }
 
   const newId = Date.now()
-  const c2    = {
+  const fileDuration  = c.duration + c.start   // duración total real del archivo (invariante)
+  const c2StartInFile = c.start + splitAt       // offset en el archivo donde empieza clip B
+  const audioWasUnlinked = c.audioLinked === false
+
+  const c2 = {
     id: newId, path: c.path, name: c.name + '_B',
-    start: c.start + splitAt, duration: c.duration,
-    tlStart: c.tlStart + splitAt, tlDuration: c.tlDuration - splitAt,
-    isImage: c.isImage || false, track: c.track || 0, audioTrack: c.audioTrack || 0,
+    start: c2StartInFile,
+    duration: fileDuration,           // misma duración total del archivo — el resize lo limita con duration - start
+    tlStart: c.tlStart + splitAt,
+    tlDuration: c.tlDuration - splitAt,
+    isImage: c.isImage || false,
+    track: c.track || 0,
+    audioTrack: c.audioTrack || 0,
+    audioLinked: audioWasUnlinked ? false : true,
+    audioNoTrack: audioWasUnlinked,
     props: JSON.parse(JSON.stringify(c.props || defaultClipProps()))
   }
+
+  // Clip A: duration sigue siendo fileDuration (puede expandirse hasta el fin del archivo)
+  // Solo reducimos tlDuration (lo que ocupa en el timeline)
+  c.duration   = fileDuration   // NO cambiar — el archivo tiene la misma duración total
   c.tlDuration = splitAt
+
   S.clips.splice(idx + 1, 0, c2)
   renderTimeline()
-  setStatus('Clip dividido ✓')
+  setStatus(audioWasUnlinked ? 'Video dividido ✓ (audio desvinculado no se dividió)' : 'Clip dividido ✓')
 }
 
 export function deleteClip() {
-  saveState('eliminar clip')
-  if (!S.selectedClip) { setStatus('Selecciona un clip'); return }
-  S.setClips(S.clips.filter(c => c.id !== S.selectedClip))
-  S.setSelectedClip(null)
-  renderTimeline()
-  setStatus('Clip eliminado')
+  saveState('eliminar')
+
+  // Caso 1: hay un audio desvinculado seleccionado independientemente → eliminar solo el audio del clip
+  if (S.selectedAudioClip && !S.selectedClip) {
+    const c = S.clips.find(x => x.id === S.selectedAudioClip)
+    if (c) {
+      c.audioNoTrack    = true     // ocultar bloque de audio en el timeline
+      c.audioLinked     = false
+      c.audioTlStart    = undefined
+      c.audioTlDuration = undefined
+    }
+    S.setSelectedAudioClip(null)
+    renderTimeline()
+    setStatus('Audio eliminado del timeline')
+    return
+  }
+
+  // Caso 2: hay un clip de video seleccionado → eliminar el clip completo (video + audio)
+  if (S.selectedClip) {
+    S.setClips(S.clips.filter(c => c.id !== S.selectedClip))
+    S.setSelectedClip(null)
+    S.setSelectedAudioClip(null)
+    renderTimeline()
+    setStatus('Clip eliminado')
+    return
+  }
+
+  setStatus('Selecciona un clip o pista de audio primero')
 }
 
 // ── Zoom del timeline ─────────────────────────────────────────────────────────
@@ -291,6 +348,116 @@ export function setTLZoom(v, anchorT) {
     const visibleWidth  = scrollEl.clientWidth
     scrollEl.scrollLeft = Math.max(0, newX - visibleWidth / 2)
   }
+}
+
+// ── Menú contextual de clips en el timeline ───────────────────────────────────
+
+function removeClipCtxMenu() {
+  document.getElementById('clip-ctx-menu')?.remove()
+}
+
+function showClipContextMenu(x, y, clipId, fromAudio = false) {
+  removeClipCtxMenu()
+  const c = S.clips.find(cl => cl.id === clipId)
+  if (!c) return
+
+  const unlinked = c.audioLinked === false
+
+  if (fromAudio && unlinked) {
+    // Clic derecho en audio desvinculado → seleccionar solo audio
+    S.setSelectedAudioClip(clipId)
+    S.setSelectedClip(null)
+    renderTimeline()
+  } else {
+    selectClip(clipId)
+  }
+
+  const linked = c.audioLinked !== false
+  const isImg  = c.isImage
+
+  const menu = document.createElement('div')
+  menu.id = 'clip-ctx-menu'
+  menu.style.cssText = [
+    'position:fixed', `left:${x}px`, `top:${y}px`,
+    'background:#1e1e1e', 'border:1px solid #3a3a3a', 'border-radius:8px',
+    'padding:4px 0', 'min-width:210px', 'z-index:9999',
+    'box-shadow:0 4px 24px rgba(0,0,0,0.75)', 'font-size:13px'
+  ].join(';')
+
+  const items = [
+    ...(isImg ? [] : [
+      {
+        icon: linked ? '🔓' : '🔗',
+        label: linked ? 'Desvincular audio' : 'Vincular audio',
+        action: () => {
+          saveState('vincular/desvincular audio')
+          c.audioLinked = !linked
+          if (!c.audioLinked) {
+            if (c.audioTlStart    === undefined) c.audioTlStart    = c.tlStart
+            if (c.audioTlDuration === undefined) c.audioTlDuration = c.tlDuration
+          } else {
+            c.audioTlStart    = c.tlStart
+            c.audioTlDuration = c.tlDuration
+          }
+          renderTimeline()
+          setStatus(c.audioLinked ? `Audio vinculado: ${c.name}` : `Audio desvinculado: ${c.name} — arrastra el bloque verde independientemente`)
+        }
+      },
+      // Opción rápida para silenciar/restaurar audio sin necesidad de desvincular
+      {
+        icon: c.audioNoTrack ? '🔊' : '🔇',
+        label: c.audioNoTrack ? 'Restaurar audio' : 'Eliminar solo audio',
+        action: () => {
+          saveState('eliminar/restaurar audio')
+          if (c.audioNoTrack) {
+            // Restaurar
+            c.audioNoTrack    = false
+            c.audioLinked     = true
+            c.audioTlStart    = undefined
+            c.audioTlDuration = undefined
+            setStatus(`Audio restaurado: ${c.name}`)
+          } else {
+            // Eliminar audio del clip sin tocar el video
+            c.audioNoTrack    = true
+            c.audioLinked     = false
+            c.audioTlStart    = undefined
+            c.audioTlDuration = undefined
+            setStatus(`Audio eliminado: ${c.name} — no se exportará`)
+          }
+          renderTimeline()
+        }
+      },
+      { divider: true }
+    ]),
+    {
+      icon: '✂️', label: 'Dividir aquí',
+      action: () => splitClip()
+    },
+    {
+      icon: '🗑️',
+      label: (fromAudio && unlinked) ? 'Eliminar pista de audio' : 'Eliminar clip',
+      danger: true,
+      action: () => deleteClip()
+    }
+  ]
+
+  items.forEach(it => {
+    if (it.divider) {
+      const sep = document.createElement('div')
+      sep.style.cssText = 'height:1px;background:#2a2a2a;margin:4px 0'
+      menu.appendChild(sep); return
+    }
+    const btn = document.createElement('div')
+    btn.style.cssText = `padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;color:${it.danger ? '#ff6b6b' : '#ddd'};border-radius:4px;margin:0 4px`
+    btn.innerHTML = `<span style="font-size:14px;width:18px;text-align:center">${it.icon}</span><span>${it.label}</span>`
+    btn.addEventListener('mouseenter', () => { btn.style.background = it.danger ? '#3a1a1a' : '#2a2a2a' })
+    btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+    btn.addEventListener('click', () => { removeClipCtxMenu(); it.action() })
+    menu.appendChild(btn)
+  })
+
+  document.body.appendChild(menu)
+  setTimeout(() => document.addEventListener('click', removeClipCtxMenu, { once: true }), 50)
 }
 
 // ── Playhead ──────────────────────────────────────────────────────────────────
@@ -339,18 +506,59 @@ function getTrackAtY(clientY) {
   return null
 }
 
+function audioClipMouseDown(e, id) {
+  e.stopPropagation(); e.preventDefault()
+
+  // Seleccionar SOLO el audio — siempre limpiar selectedClip
+  S.setSelectedAudioClip(id)
+  S.setSelectedClip(null)
+  renderTimeline()
+
+  const c = S.clips.find(x => x.id === id)
+  if (!c) return
+
+  const audioStart = (c.audioTlStart !== undefined) ? c.audioTlStart : c.tlStart
+
+  S.setDrag({
+    type: 'move-audio', clipId: id,
+    startX: e.clientX, startY: e.clientY,
+    origTlStart: c.tlStart, origTlDuration: c.tlDuration,
+    origAudioTlStart: audioStart,
+    origStart: c.start, origTrack: c.track || 0,
+    origAudioTrack: c.audioTrack || 0, ghostTrack: c.track || 0,
+    origTlStartForAudio: audioStart
+  })
+
+  // Solo resaltar el elemento de audio, no el de video
+  const audioEl = document.querySelector(`[data-audioid="${id}"][data-is-audio="true"]`)
+  if (audioEl) audioEl.classList.add('dragging')
+}
+
 function clipMouseDown(e, id, type) {
   e.stopPropagation(); e.preventDefault()
   saveState('mover clip')
+  // Al seleccionar el video, limpiar selección de audio independiente
+  S.setSelectedAudioClip(null)
   selectClip(id)
   const c = S.clips.find(x => x.id === id)
   if (!c) return
+
+  // effectiveType: move-audio solo aplica si audio desvinculado
+  const effectiveType = (type === 'move-audio' && c.audioLinked !== false) ? 'move' : type
+
+  // Para audio desvinculado, la posición de referencia es audioTlStart
+  const audioStart = (c.audioLinked === false && c.audioTlStart !== undefined)
+    ? c.audioTlStart
+    : c.tlStart
+
   S.setDrag({
-    type, clipId: id,
+    type: effectiveType, clipId: id,
     startX: e.clientX, startY: e.clientY,
     origTlStart: c.tlStart, origTlDuration: c.tlDuration,
+    origAudioTlStart: audioStart,
     origStart: c.start, origTrack: c.track || 0,
-    origAudioTrack: c.audioTrack || 0, ghostTrack: c.track || 0
+    origAudioTrack: c.audioTrack || 0, ghostTrack: c.track || 0,
+    origTlStartForAudio: audioStart
   })
   document.querySelectorAll(`[data-id="${id}"]`).forEach(el => el.classList.add('dragging'))
 }
@@ -383,6 +591,8 @@ document.addEventListener('mousemove', e => {
 
   if (S.drag.type === 'move') {
     c.tlStart = Math.max(0, S.drag.origTlStart + dt)
+    // Si el audio está desvinculado, su posición NO cambia con el video
+    // (audioTlStart ya tiene su valor independiente y no se toca aquí)
     const hoveredTrack = getTrackAtY(e.clientY)
     if (hoveredTrack !== null) {
       TRACK_IDS.forEach((tid, i) => {
@@ -391,6 +601,9 @@ document.addEventListener('mousemove', e => {
       })
       S.drag.ghostTrack = hoveredTrack
     }
+  } else if (S.drag.type === 'move-audio') {
+    // Solo mover el audio (desvinculado)
+    c.audioTlStart = Math.max(0, S.drag.origAudioTlStart + dt)
   } else if (S.drag.type === 'resize-right') {
     c.tlDuration = clamp(S.drag.origTlDuration + dt, minDur, c.duration - c.start)
   } else if (S.drag.type === 'resize-left') {
@@ -424,13 +637,22 @@ document.addEventListener('mouseup', e => {
   if (S.drag.type === 'move') {
     const c = S.clips.find(x => x.id === S.drag.clipId)
     if (c && S.drag.ghostTrack !== null) {
-      if (S.drag.ghostTrack <= 1) {
-        c.track      = S.drag.ghostTrack
-        c.audioTrack = S.drag.ghostTrack
+      if (c.audioLinked === false) {
+        // Audio desvinculado: mover solo la pista de video
+        if (S.drag.ghostTrack <= 1) {
+          c.track = S.drag.ghostTrack
+        }
       } else {
-        c.audioTrack = S.drag.ghostTrack - 2
+        if (S.drag.ghostTrack <= 1) {
+          c.track      = S.drag.ghostTrack
+          c.audioTrack = S.drag.ghostTrack
+        } else {
+          c.audioTrack = S.drag.ghostTrack - 2
+        }
       }
     }
+  } else if (S.drag.type === 'move-audio') {
+    // audioTlStart ya fue actualizado en mousemove, no hay nada más que hacer
   }
 
   S.setDrag(null)
@@ -438,13 +660,36 @@ document.addEventListener('mouseup', e => {
 })
 
 function renderClipPositions() {
-  const allTracks = TRACK_IDS.map(id => document.getElementById(id)).filter(Boolean)
+  const videoTrackEls = [
+    document.getElementById('tl-video-track'),
+    document.getElementById('tl-video-track-2')
+  ].filter(Boolean)
+  const audioTrackEls = [
+    document.getElementById('tl-audio-track'),
+    document.getElementById('tl-audio-track-2')
+  ].filter(Boolean)
+
   S.clips.forEach(c => {
-    const left  = c.tlStart * S.tlZoom
-    const width = Math.max(c.tlDuration * S.tlZoom, 20)
-    allTracks.forEach(track => {
+    const videoLeft  = c.tlStart * S.tlZoom
+    const videoWidth = Math.max(c.tlDuration * S.tlZoom, 20)
+
+    // Posición y tamaño del audio: independientes si está desvinculado
+    const unlinked   = c.audioLinked === false
+    const audioStart = (unlinked && c.audioTlStart    !== undefined) ? c.audioTlStart    : c.tlStart
+    const audioDur   = (unlinked && c.audioTlDuration !== undefined) ? c.audioTlDuration : c.tlDuration
+    const audioLeft  = audioStart * S.tlZoom
+    const audioWidth = Math.max(audioDur * S.tlZoom, 20)
+
+    // Actualizar elementos de video
+    videoTrackEls.forEach(track => {
       const el = track.querySelector(`[data-id="${c.id}"]`)
-      if (el) { el.style.left = left + 'px'; el.style.width = width + 'px' }
+      if (el) { el.style.left = videoLeft + 'px'; el.style.width = videoWidth + 'px' }
+    })
+
+    // Actualizar elementos de audio con su tamaño independiente
+    audioTrackEls.forEach(track => {
+      const el = track.querySelector(`[data-id="${c.id}"]`)
+      if (el) { el.style.left = audioLeft + 'px'; el.style.width = audioWidth + 'px' }
     })
   })
 }
@@ -530,11 +775,12 @@ export function startLibraryDrag(e, index) {
 
     S.clips.push({
       id: Date.now(), path: m.path, name: m.name,
-      start: 0, duration: clipDuration,
+      start: 0, duration: isImg ? clipDuration : (m.duration || clipDuration),
       tlStart, tlDuration: clipDuration,
       isImage: isImg,
       track:      isVideo ? track : 0,
       audioTrack: isVideo ? track : track,
+      audioLinked: true,
       props
     })
     renderTimeline()

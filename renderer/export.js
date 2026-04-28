@@ -30,11 +30,14 @@ export async function startExport() {
   try {
     if (total === 1) {
       const c = ordered[0]
+      // Sin audio si: audioNoTrack, o desvinculado y eliminado del timeline
+      const noAudio = !!(c.audioNoTrack) || (c.audioLinked === false && c.audioTlStart === undefined)
       window.api.onProgress(pct => setBar(pct))
       await window.api.exportVideo({
         input: c.path, output: outPath,
         startTime: c.start, duration: c.tlDuration,
-        speed, brightness, contrast
+        speed, brightness, contrast,
+        muteAudio: noAudio
       })
     } else {
       const tmpFiles = []
@@ -48,10 +51,12 @@ export async function startExport() {
           const overall = Math.round(((i + pct / 100) / total) * 90)
           setBar(overall)
         })
+        const noAudio = !!(c.audioNoTrack) || (c.audioLinked === false && c.audioTlStart === undefined)
         await window.api.exportVideo({
           input: c.path, output: tmpOut,
           startTime: c.start, duration: c.tlDuration,
-          speed, brightness, contrast
+          speed, brightness, contrast,
+          muteAudio: noAudio
         })
       }
 
