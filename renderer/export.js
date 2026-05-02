@@ -1,9 +1,15 @@
 // ── Exportar video ────────────────────────────────────────────────────────────
 // Orquesta la exportación: un solo clip o múltiples con transiciones.
+// Texto estático/fade → drawtext de ffmpeg.
+// Texto animado       → secuencia PNG renderizada en canvas → overlay ffmpeg.
 
 import * as S from './state.js'
 import { setStatus } from './utils.js'
-import { buildDrawtextFilter } from './text-clips.js'
+import { buildDrawtextFilter, renderTextClipToImageSequence, STATIC_ANIMATIONS } from './text-clips.js'
+
+const EXPORT_W   = 1920
+const EXPORT_H   = 1080
+const EXPORT_FPS = 30
 
 export async function startExport() {
   if (!window.api)    { alert('API no disponible'); return }
@@ -29,10 +35,32 @@ export async function startExport() {
   }
 
   try {
-    // Generar filtros drawtext para los clips de texto
-    const textFilters = (S.textClips || []).map(tc =>
-      buildDrawtextFilter(tc, 1920, 1080, 0)
+    const textClips = S.textClips || []
+
+    // Separar clips estáticos (drawtext) de animados (canvas → PNG → overlay)
+    const staticClips   = textClips.filter(tc => STATIC_ANIMATIONS.has(tc.animation))
+    const animatedClips = textClips.filter(tc => !STATIC_ANIMATIONS.has(tc.animation))
+
+    // Filtros drawtext para none/fade
+    const textFilters = staticClips.map(tc =>
+      buildDrawtextFilter(tc, EXPORT_W, EXPORT_H, 0)
     )
+
+    // Renderizar PNGs para animaciones complejas
+    let textOverlays = []
+    if (animatedClips.length > 0) {
+      setStatus('Renderizando texto animado...')
+      setBar(2)
+      for (const tc of animatedClips) {
+        const result = await renderTextClipToImageSequence(tc, EXPORT_W, EXPORT_H, EXPORT_FPS)
+        textOverlays.push({
+          frameDir:   result.frameDir,
+          fps:        result.fps,
+          tlStart:    tc.tlStart,
+          tlDuration: tc.tlDuration,
+        })
+      }
+    }
 
     if (total === 1) {
       const c = ordered[0]
@@ -43,17 +71,15 @@ export async function startExport() {
         startTime: c.start, duration: c.tlDuration,
         speed, brightness, contrast,
         muteAudio: noAudio,
-        textFilters   // ← texto quemado
+        textFilters,
+        textOverlays,
       })
     } else {
-      // FIX: Obtener la carpeta temporal del sistema operativo
-      // En Windows /tmp/ no existe; os.tmpdir() devuelve C:\Users\...\AppData\Local\Temp
-      const tmpDir = await window.api.getTmpDir()  // ← FIX: await porque getTmpDir es async (IPC)
+      const tmpDir = await window.api.getTmpDir()
       const tmpFiles = []
 
       for (let i = 0; i < ordered.length; i++) {
         const c      = ordered[i]
-        // FIX: usar tmpDir en lugar de la ruta hardcodeada '/tmp/'
         const tmpOut = `${tmpDir}/ve_clip_${Date.now()}_${i}.mp4`
         tmpFiles.push(tmpOut)
         setStatus(`Procesando clip ${i + 1} de ${total}: ${c.name}`)
@@ -62,11 +88,24 @@ export async function startExport() {
           setBar(overall)
         })
         const noAudio = !!(c.audioNoTrack) || (c.audioLinked === false && c.audioTlStart === undefined)
+
+        // Filtrar qué texto cae dentro de este clip
+        const clipStart = c.tlStart
+        const clipEnd   = c.tlStart + c.tlDuration
+        const clipStaticFilters = staticClips
+          .filter(tc => tc.tlStart < clipEnd && tc.tlStart + tc.tlDuration > clipStart)
+          .map(tc => buildDrawtextFilter(tc, EXPORT_W, EXPORT_H, clipStart))
+        const clipOverlays = textOverlays
+          .filter(ov => ov.tlStart < clipEnd && ov.tlStart + ov.tlDuration > clipStart)
+          .map(ov => ({ ...ov, tlStart: ov.tlStart - clipStart }))
+
         await window.api.exportVideo({
           input: c.path, output: tmpOut,
           startTime: c.start, duration: c.tlDuration,
           speed, brightness, contrast,
-          muteAudio: noAudio
+          muteAudio: noAudio,
+          textFilters: clipStaticFilters,
+          textOverlays: clipOverlays,
         })
       }
 

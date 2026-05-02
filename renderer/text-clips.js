@@ -638,23 +638,72 @@ export async function renderTextToFrames(tc, videoW, videoH, fps = 30) {
   return frames
 }
 
-// ── Generar filtro drawtext para FFmpeg (modo simple, sin animación) ──────────
+// ── Renderizar clip de texto animado a secuencia de PNGs en disco ─────────────
+// Devuelve la carpeta donde se guardaron los frames, o null si falla.
+// Usada por export.js para clips con animaciones complejas.
+
+export const STATIC_ANIMATIONS = new Set(['none', 'fade'])
+
+export async function renderTextClipToImageSequence(tc, videoW, videoH, fps = 30) {
+  const tmpDir    = await window.api.getTmpDir()
+  const frameDir  = `${tmpDir}/ve_textframes_${tc.id}_${Date.now()}`
+  const totalFrames = Math.ceil(tc.tlDuration * fps)
+
+  const offscreen = document.createElement('canvas')
+  offscreen.width  = videoW
+  offscreen.height = videoH
+  const ctx = offscreen.getContext('2d')
+
+  const pngPaths = []
+  for (let f = 0; f < totalFrames; f++) {
+    ctx.clearRect(0, 0, videoW, videoH)
+    const localT = f / fps
+    const prog   = localT / tc.tlDuration
+    drawTextClip(ctx, tc, localT, prog, videoW, videoH, false)
+    const dataUrl = offscreen.toDataURL('image/png')
+    const base64  = dataUrl.split(',')[1]
+    const framePath = `${frameDir}/frame_${String(f).padStart(6, '0')}.png`
+    pngPaths.push({ path: framePath, data: base64 })
+  }
+
+  // Escribir todos los PNGs al disco via IPC
+  await window.api.saveFrames({ frameDir, frames: pngPaths })
+  return { frameDir, totalFrames, fps }
+}
 // Para animaciones complejas se usa el overlay de canvas frames.
 // Para clips sin animación o fade simple usamos drawtext directo.
 
 export function buildDrawtextFilter(tc, videoW, videoH, timeOffset = 0) {
   const text     = tc.text.replace(/'/g, "\\'").replace(/:/g, '\\:')
   const fontSize = Math.round((tc.fontSize / 100) * videoH * 0.18)
-  const x        = tc.align === 'center' ? `(w-text_w)/2+(${Math.round((tc.x-50)/100*videoW)})` :
-                   tc.align === 'left'   ? `${Math.round(tc.x/100*videoW)}` :
-                   `w-text_w-${Math.round((100-tc.x)/100*videoW)}`
-  const y        = `${Math.round(tc.y / 100 * videoH)}`
-  const color    = tc.color?.replace('#', '') || 'ffffff'
-  const enable   = `between(t,${tc.tlStart - timeOffset},${tc.tlStart + tc.tlDuration - timeOffset})`
+
+  // X: igual que antes
+  const x = tc.align === 'center' ? `(w-text_w)/2+(${Math.round((tc.x-50)/100*videoW)})` :
+             tc.align === 'left'   ? `${Math.round(tc.x/100*videoW)}` :
+             `w-text_w-${Math.round((100-tc.x)/100*videoW)}`
+
+  // Y: el canvas usa textBaseline='middle', ffmpeg drawtext usa la esquina superior.
+  // Restamos fontSize/2 para que coincidan visualmente.
+  const yPx = Math.round(tc.y / 100 * videoH) - Math.round(fontSize / 2)
+  const y   = `${Math.max(0, yPx)}`
+
+  const color  = tc.color?.replace('#', '') || 'ffffff'
+  const tStart = (tc.tlStart - timeOffset).toFixed(3)
+  const tEnd   = (tc.tlStart + tc.tlDuration - timeOffset).toFixed(3)
+  const enable = `between(t,${tStart},${tEnd})`
+
+  // Fade: alpha que sube en los primeros 0.3s y baja en los últimos 0.3s
+  let alphaExpr = null
+  if (tc.animation === 'fade') {
+    const fi = Math.min(0.3, tc.tlDuration * 0.2).toFixed(3)
+    const fo = Math.min(0.3, tc.tlDuration * 0.2).toFixed(3)
+    alphaExpr = `if(lt(t-${tStart},${fi}),(t-${tStart})/${fi},if(gt(t,${tEnd}-${fo}),(${tEnd}-t)/${fo},1))`
+  }
 
   let filter = `drawtext=text='${text}':x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=0x${color}:enable='${enable}'`
-  if (tc.shadow) filter += `:shadowcolor=0x000000AA:shadowx=2:shadowy=2`
-  if (tc.bg)     filter += `:box=1:boxcolor=0x00000088:boxborderw=${Math.round(fontSize*0.3)}`
+  if (alphaExpr)  filter += `:alpha='${alphaExpr}'`
+  if (tc.shadow)  filter += `:shadowcolor=0x000000AA:shadowx=2:shadowy=2`
+  if (tc.bg)      filter += `:box=1:boxcolor=0x00000088:boxborderw=${Math.round(fontSize*0.3)}`
 
   return filter
 }

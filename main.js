@@ -73,6 +73,15 @@ app.on('window-all-closed', () => app.quit())
 // FIX: expone os.tmpdir() al renderer de forma segura via IPC (el sandbox no permite require('os'))
 ipcMain.handle('get-tmpdir', () => os.tmpdir())
 
+// ── Guardar frames PNG de texto animado al disco ──────────────────────────────
+ipcMain.handle('save-frames', async (event, { frameDir, frames }) => {
+  fs.mkdirSync(frameDir, { recursive: true })
+  for (const { path: framePath, data } of frames) {
+    fs.writeFileSync(framePath, Buffer.from(data, 'base64'))
+  }
+  return { ok: true }
+})
+
 ipcMain.handle('open-file', async () => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -106,7 +115,7 @@ ipcMain.handle('get-metadata', async (event, filePath) => {
   })
 })
 
-ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast, muteAudio, textFilters }) => {
+ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast, muteAudio, textFilters, textOverlays }) => {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject('FFmpeg no encontrado.')
 
@@ -116,24 +125,59 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
     args.push('-i', input)
     if (duration > 0) { args.push('-t', String(duration)) }
 
-    // Filtros de video (velocidad, color, texto)
+    // ── Inputs adicionales: secuencias PNG de texto animado ──────────────────
+    // Cada overlay es { frameDir, fps, tlStart, tlDuration }
+    const overlays = textOverlays || []
+    overlays.forEach(ov => {
+      args.push(
+        '-framerate', String(ov.fps),
+        '-i', path.join(ov.frameDir, 'frame_%06d.png')
+      )
+    })
+
+    // ── Filtros de video (velocidad, color, texto estático) ───────────────────
     const vf = []
     if (speed && speed !== 1) vf.push(`setpts=${(1/speed).toFixed(4)}*PTS`)
     if (brightness || contrast) {
       vf.push(`eq=brightness=${((brightness||0)/100).toFixed(3)}:contrast=${(1+(contrast||0)/100).toFixed(3)}`)
     }
-    // Quemar texto animado sobre el video
     if (textFilters && textFilters.length > 0) {
       textFilters.forEach(f => vf.push(f))
     }
-    if (vf.length) { args.push('-vf', vf.join(',')) }
 
-    args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p')
+    if (overlays.length === 0) {
+      // Sin overlays animados: pipeline simple
+      if (vf.length) { args.push('-vf', vf.join(',')) }
+      args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p')
+    } else {
+      // Con overlays animados: usar filter_complex
+      // [0:v] → aplicar vf base → [base]
+      // luego overlay de cada secuencia PNG con offset de tiempo
+      let fc = ''
+      const baseFilter = vf.length > 0 ? vf.join(',') : 'null'
+      fc += `[0:v]${baseFilter}[base0];`
+
+      overlays.forEach((ov, i) => {
+        const inputIdx = i + 1   // input 0 = video, 1..N = overlays
+        const prevLabel = i === 0 ? 'base0' : `ov${i-1}`
+        const outLabel  = i === overlays.length - 1 ? 'vout' : `ov${i}`
+        // enable: mostrar el overlay solo durante su ventana de tiempo
+        const enableExpr = `between(t,${ov.tlStart.toFixed(3)},${(ov.tlStart + ov.tlDuration).toFixed(3)})`
+        // offset: cuántos segundos después del inicio del video empieza este overlay
+        const offsetSecs = Math.max(0, ov.tlStart - (startTime || 0))
+        fc += `[${prevLabel}][${inputIdx}:v]overlay=x=0:y=0:enable='${enableExpr}':eof_action=pass[${outLabel}];`
+      })
+      // Quitar el último punto y coma
+      fc = fc.replace(/;$/, '')
+      args.push('-filter_complex', fc, '-map', '[vout]')
+      args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p')
+    }
 
     if (muteAudio) {
       args.push('-map', '0:v:0', '-an')
     } else {
-      args.push('-map', '0:v:0', '-map', '0:a?')
+      if (overlays.length === 0) args.push('-map', '0:v:0')
+      args.push('-map', '0:a?')
       if (speed && speed !== 1) {
         const at = Math.min(Math.max(speed, 0.5), 2.0).toFixed(3)
         args.push('-af', `atempo=${at}`)
@@ -155,6 +199,10 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
       }
     })
     proc.on('close', code => {
+      // Limpiar carpetas de frames temporales
+      overlays.forEach(ov => {
+        try { fs.rmSync(ov.frameDir, { recursive: true, force: true }) } catch(e) {}
+      })
       if (code === 0) { event.sender.send('export-progress', 100); resolve({ ok: true }) }
       else reject('FFmpeg error:\n' + stderr.slice(-1000))
     })

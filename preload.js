@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('api', {
   exportVideo:  (opts)  => ipcRenderer.invoke('export-video', opts),
   concatVideos: (opts)  => ipcRenderer.invoke('concat-videos', opts),
   onProgress:   (cb)    => ipcRenderer.on('export-progress', (_, v) => cb(v)),
-  getTmpDir:    ()      => ipcRenderer.invoke('get-tmpdir'),  // ← FIX: usa IPC en lugar de require('os')
+  getTmpDir:    ()      => ipcRenderer.invoke('get-tmpdir'),
+  saveFrames:   (opts)  => ipcRenderer.invoke('save-frames', opts),   // ← frames de texto animado
 })
