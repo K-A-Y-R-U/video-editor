@@ -19,21 +19,21 @@ function getTextTrackEl() {
 // ── Animaciones disponibles ───────────────────────────────────────────────────
 
 export const TEXT_ANIMATIONS = {
-  none:       { label: 'Sin animación',  icon: '—'  },
-  fade:       { label: 'Fade',           icon: '✦'  },
-  slideUp:    { label: 'Slide Up',       icon: '↑'  },
-  slideDown:  { label: 'Slide Down',     icon: '↓'  },
-  slideLeft:  { label: 'Slide Left',     icon: '←'  },
-  slideRight: { label: 'Slide Right',    icon: '→'  },
-  typewriter: { label: 'Máquina',        icon: '⌨'  },
-  bounce:     { label: 'Bounce',         icon: '⤴'  },
-  zoom:       { label: 'Zoom In',        icon: '⊕'  },
-  zoomOut:    { label: 'Zoom Out',       icon: '⊖'  },
-  glitch:     { label: 'Glitch',         icon: '▓'  },
-  wave:       { label: 'Ola',            icon: '〜' },
-  spin:       { label: 'Spin',           icon: '↻'  },
-  neon:       { label: 'Neón',           icon: '◈'  },
-  cinematic:  { label: 'Cinemático',     icon: '▬'  },
+  none:       { label: 'Sin animación',  icon: '—',  defaultDuration: 3   },
+  fade:       { label: 'Fade',           icon: '✦',  defaultDuration: 3   },
+  slideUp:    { label: 'Slide Up',       icon: '↑',  defaultDuration: 2.5 },
+  slideDown:  { label: 'Slide Down',     icon: '↓',  defaultDuration: 2.5 },
+  slideLeft:  { label: 'Slide Left',     icon: '←',  defaultDuration: 2.5 },
+  slideRight: { label: 'Slide Right',    icon: '→',  defaultDuration: 2.5 },
+  typewriter: { label: 'Máquina',        icon: '⌨',  defaultDuration: 4   },
+  bounce:     { label: 'Bounce',         icon: '⤴',  defaultDuration: 2   },
+  zoom:       { label: 'Zoom In',        icon: '⊕',  defaultDuration: 2   },
+  zoomOut:    { label: 'Zoom Out',       icon: '⊖',  defaultDuration: 2   },
+  glitch:     { label: 'Glitch',         icon: '▓',  defaultDuration: 1.5 },
+  wave:       { label: 'Ola',            icon: '〜', defaultDuration: 4   },
+  spin:       { label: 'Spin',           icon: '↻',  defaultDuration: 1.5 },
+  neon:       { label: 'Neón',           icon: '◈',  defaultDuration: 4   },
+  cinematic:  { label: 'Cinemático',     icon: '▬',  defaultDuration: 3.5 },
 }
 
 // Presets de estilo rápido
@@ -638,52 +638,21 @@ export async function renderTextToFrames(tc, videoW, videoH, fps = 30) {
   return frames
 }
 
-// ── Renderizar clip de texto animado a secuencia de PNGs en disco ─────────────
-// Devuelve la carpeta donde se guardaron los frames, o null si falla.
-// Usada por export.js para clips con animaciones complejas.
-
+// ── Animaciones que ffmpeg drawtext puede manejar (estáticas/fade simple) ─────
+// El resto necesita renderizado frame a frame via renderTextClipToImageSequence.
 export const STATIC_ANIMATIONS = new Set(['none', 'fade'])
 
-export async function renderTextClipToImageSequence(tc, videoW, videoH, fps = 30) {
-  const tmpDir    = await window.api.getTmpDir()
-  const frameDir  = `${tmpDir}/ve_textframes_${tc.id}_${Date.now()}`
-  const totalFrames = Math.ceil(tc.tlDuration * fps)
-
-  const offscreen = document.createElement('canvas')
-  offscreen.width  = videoW
-  offscreen.height = videoH
-  const ctx = offscreen.getContext('2d')
-
-  const pngPaths = []
-  for (let f = 0; f < totalFrames; f++) {
-    ctx.clearRect(0, 0, videoW, videoH)
-    const localT = f / fps
-    const prog   = localT / tc.tlDuration
-    drawTextClip(ctx, tc, localT, prog, videoW, videoH, false)
-    const dataUrl = offscreen.toDataURL('image/png')
-    const base64  = dataUrl.split(',')[1]
-    const framePath = `${frameDir}/frame_${String(f).padStart(6, '0')}.png`
-    pngPaths.push({ path: framePath, data: base64 })
-  }
-
-  // Escribir todos los PNGs al disco via IPC
-  await window.api.saveFrames({ frameDir, frames: pngPaths })
-  return { frameDir, totalFrames, fps }
-}
-// Para animaciones complejas se usa el overlay de canvas frames.
-// Para clips sin animación o fade simple usamos drawtext directo.
+// ── Generar filtro drawtext para FFmpeg (modo simple, sin animación) ──────────
 
 export function buildDrawtextFilter(tc, videoW, videoH, timeOffset = 0) {
   const text     = tc.text.replace(/'/g, "\\'").replace(/:/g, '\\:')
   const fontSize = Math.round((tc.fontSize / 100) * videoH * 0.18)
 
-  // X: igual que antes
   const x = tc.align === 'center' ? `(w-text_w)/2+(${Math.round((tc.x-50)/100*videoW)})` :
              tc.align === 'left'   ? `${Math.round(tc.x/100*videoW)}` :
              `w-text_w-${Math.round((100-tc.x)/100*videoW)}`
 
-  // Y: el canvas usa textBaseline='middle', ffmpeg drawtext usa la esquina superior.
-  // Restamos fontSize/2 para que coincidan visualmente.
+  // Canvas usa textBaseline='middle'; drawtext posiciona por esquina superior → restar fontSize/2
   const yPx = Math.round(tc.y / 100 * videoH) - Math.round(fontSize / 2)
   const y   = `${Math.max(0, yPx)}`
 
@@ -706,4 +675,32 @@ export function buildDrawtextFilter(tc, videoW, videoH, timeOffset = 0) {
   if (tc.bg)      filter += `:box=1:boxcolor=0x00000088:boxborderw=${Math.round(fontSize*0.3)}`
 
   return filter
+}
+
+// ── Renderizar clip de texto animado a secuencia de PNGs en disco ─────────────
+// Usada por export.js para clips con animaciones complejas (no none/fade).
+
+export async function renderTextClipToImageSequence(tc, videoW, videoH, fps = 30) {
+  const tmpDir      = await window.api.getTmpDir()
+  const frameDir    = `${tmpDir}/ve_textframes_${tc.id}_${Date.now()}`
+  const totalFrames = Math.ceil(tc.tlDuration * fps)
+
+  const offscreen = document.createElement('canvas')
+  offscreen.width  = videoW
+  offscreen.height = videoH
+  const ctx = offscreen.getContext('2d')
+
+  const pngPaths = []
+  for (let f = 0; f < totalFrames; f++) {
+    ctx.clearRect(0, 0, videoW, videoH)
+    const localT = f / fps
+    const prog   = localT / tc.tlDuration
+    drawTextClip(ctx, tc, localT, prog, videoW, videoH, false)
+    const base64    = offscreen.toDataURL('image/png').split(',')[1]
+    const framePath = `${frameDir}/frame_${String(f).padStart(6, '0')}.png`
+    pngPaths.push({ path: framePath, data: base64 })
+  }
+
+  await window.api.saveFrames({ frameDir, frames: pngPaths })
+  return { frameDir, totalFrames, fps }
 }
