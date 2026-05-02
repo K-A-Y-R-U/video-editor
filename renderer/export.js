@@ -3,6 +3,7 @@
 
 import * as S from './state.js'
 import { setStatus } from './utils.js'
+import { buildDrawtextFilter } from './text-clips.js'
 
 export async function startExport() {
   if (!window.api)    { alert('API no disponible'); return }
@@ -28,16 +29,21 @@ export async function startExport() {
   }
 
   try {
+    // Generar filtros drawtext para los clips de texto
+    const textFilters = (S.textClips || []).map(tc =>
+      buildDrawtextFilter(tc, 1920, 1080, 0)
+    )
+
     if (total === 1) {
       const c = ordered[0]
-      // Sin audio si: audioNoTrack, o desvinculado y eliminado del timeline
       const noAudio = !!(c.audioNoTrack) || (c.audioLinked === false && c.audioTlStart === undefined)
       window.api.onProgress(pct => setBar(pct))
       await window.api.exportVideo({
         input: c.path, output: outPath,
         startTime: c.start, duration: c.tlDuration,
         speed, brightness, contrast,
-        muteAudio: noAudio
+        muteAudio: noAudio,
+        textFilters   // ← texto quemado
       })
     } else {
       // FIX: Obtener la carpeta temporal del sistema operativo

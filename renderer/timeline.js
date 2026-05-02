@@ -9,6 +9,10 @@ import { renderMarkers, updateMarkerPositions } from './markers.js'
 import { openTransitionPanel } from './transitions.js'
 import { loadMedia, renderMediaPanel, updateTimeDisplay, setupTrimSliders } from './media.js'
 import { loadPropsToUI, applyVideoStyle } from './effects.js'
+import { initDefaultTracks, renderTracks, getTrackIdAtY } from './tracks.js'
+import { renderTextTimeline } from './text-clips.js'
+
+const TRACK_IDS_COMPAT = ['tl-video-track', 'tl-video-track-2', 'tl-audio-track', 'tl-audio-track-2']
 
 // ── Estilos de arrastre (inyectados una sola vez) ─────────────────────────────
 ;(function injectStyles() {
@@ -28,15 +32,20 @@ import { loadPropsToUI, applyVideoStyle } from './effects.js'
   document.head.appendChild(s)
 })()
 
-// ── Constantes de pistas ──────────────────────────────────────────────────────
-const TRACK_IDS = ['tl-video-track', 'tl-video-track-2', 'tl-audio-track', 'tl-audio-track-2']
+// ── Inicializar sistema de pistas ─────────────────────────────────────────────
+export function initTracks() {
+  initDefaultTracks()
+  renderTracks()
+}
 
-const LIB_TRACKS = [
-  { id: 'tl-video-track',   isVideo: true,  track: 0 },
-  { id: 'tl-video-track-2', isVideo: true,  track: 1 },
-  { id: 'tl-audio-track',   isVideo: false, track: 0 },
-  { id: 'tl-audio-track-2', isVideo: false, track: 1 },
-]
+// Helper: primer trackId de tipo 'video'
+function firstVideoTrackId() {
+  return S.tracks.find(t => t.type === 'video')?.id || 'track-v1'
+}
+// Helper: primer trackId de tipo 'audio'
+function firstAudioTrackId() {
+  return S.tracks.find(t => t.type === 'audio')?.id || 'track-a1'
+}
 
 // ── Agregar clip al timeline ──────────────────────────────────────────────────
 
@@ -56,7 +65,11 @@ export function addToTimeline() {
     id, path: m.path, name: m.name,
     start: 0, duration: isImg ? 5 : (m.duration || 10),
     tlStart, tlDuration: clipDuration,
-    isImage: isImg, track: 0, audioTrack: 0, audioLinked: true, props
+    isImage: isImg,
+    trackId:      firstVideoTrackId(),
+    audioTrackId: firstAudioTrackId(),
+    // compatibilidad legacy
+    track: 0, audioTrack: 0, audioLinked: true, props
   })
   renderTimeline()
   setStatus(`Clip agregado: ${m.name}`)
@@ -147,43 +160,50 @@ export function renderTimeline() {
   }
   ruler.innerHTML = rHtml
 
-  // Pistas
-  const vt  = document.getElementById('tl-video-track')
-  const at  = document.getElementById('tl-audio-track')
-  const vt2 = document.getElementById('tl-video-track-2')
-  const at2 = document.getElementById('tl-audio-track-2')
-  vt.style.width = w + 'px'
-  at.style.width = w + 'px'
-  document.getElementById('tl-inner').style.width = w + 'px'
+  // Pistas dinámicas — renderizar clips en cada pista
+  const innerEl = document.getElementById('tl-inner')
+  if (!innerEl) return
 
-  vt.innerHTML = ''; if (vt2) vt2.innerHTML = ''
-  at.innerHTML = ''; if (at2) at2.innerHTML = ''
+  innerEl.style.width = w + 'px'
+  innerEl.querySelectorAll('.tl-track').forEach(el => {
+    el.style.width = w + 'px'
+    el.innerHTML = ''
+  })
 
-  const track0Clips = S.clips
-    .filter(c => (c.track || 0) === 0)
-    .sort((a, b) => a.tlStart - b.tlStart)
-
+  // Agrupar clips por pista
   S.clips.forEach(c => {
-    const trackIdx      = c.track      || 0
-    const audioTrackIdx = c.audioTrack || 0
+    const vTrackId = c.trackId || firstVideoTrackId()
+    const aTrackId = c.audioTrackId || firstAudioTrackId()
 
-    const vEl = makeVideoClipEl(c)
-    if (trackIdx === 1 && vt2) vt2.appendChild(vEl)
-    else vt.appendChild(vEl)
+    const vTrackEl = document.getElementById(`track-${vTrackId}`)
+    if (vTrackEl) vTrackEl.appendChild(makeVideoClipEl(c))
 
     if (!c.isImage && !c.audioNoTrack) {
-      const aEl = makeAudioClipEl(c)
-      if (audioTrackIdx === 1 && at2) at2.appendChild(aEl)
-      else at.appendChild(aEl)
+      const aTrackEl = document.getElementById(`track-${aTrackId}`)
+      if (aTrackEl) aTrackEl.appendChild(makeAudioClipEl(c))
     }
   })
 
-  // Botones de transición entre clips adyacentes
+  // Pista de texto
+  const textTrack = document.querySelector('.tl-track[data-track-type="text"]')
+  if (textTrack) {
+    textTrack.style.width = w + 'px'
+    textTrack.innerHTML = ''
+    renderTextTimeline()
+  }
+
+  // Botones de transición entre clips adyacentes en pista principal
+  const mainVideoTrackId = firstVideoTrackId()
+  const mainTrackEl = document.getElementById(`track-${mainVideoTrackId}`)
+  const track0Clips = S.clips
+    .filter(c => (c.trackId || firstVideoTrackId()) === mainVideoTrackId)
+    .sort((a, b) => a.tlStart - b.tlStart)
+
   for (let i = 1; i < track0Clips.length; i++) {
     const prev = track0Clips[i - 1]
     const curr = track0Clips[i]
     const gap  = curr.tlStart - (prev.tlStart + prev.tlDuration)
-    if (Math.abs(gap) < 0.5) {
+    if (Math.abs(gap) < 0.5 && mainTrackEl) {
       const junctionX = curr.tlStart * S.tlZoom
       const btn       = document.createElement('div')
       btn.className   = 'tl-transition-btn' + (S.transitions[curr.id] ? ' has-transition' : '')
@@ -192,7 +212,7 @@ export function renderTimeline() {
       btn.dataset.clipId = curr.id
       btn.innerHTML   = S.transitions[curr.id] ? '⇄' : '+'
       btn.addEventListener('click', e => { e.stopPropagation(); openTransitionPanel(curr.id) })
-      vt.appendChild(btn)
+      mainTrackEl.appendChild(btn)
     }
   }
 
@@ -591,15 +611,12 @@ document.addEventListener('mousemove', e => {
 
   if (S.drag.type === 'move') {
     c.tlStart = Math.max(0, S.drag.origTlStart + dt)
-    // Si el audio está desvinculado, su posición NO cambia con el video
-    // (audioTlStart ya tiene su valor independiente y no se toca aquí)
-    const hoveredTrack = getTrackAtY(e.clientY)
-    if (hoveredTrack !== null) {
-      TRACK_IDS.forEach((tid, i) => {
-        const el = document.getElementById(tid)
-        if (el) el.classList.toggle('track-hover', i === hoveredTrack)
+    const hoveredTrackId = getTrackIdAtY(e.clientY)
+    if (hoveredTrackId) {
+      document.querySelectorAll('.tl-track').forEach(el => {
+        el.classList.toggle('track-hover', el.dataset.trackId === hoveredTrackId)
       })
-      S.drag.ghostTrack = hoveredTrack
+      S.drag.ghostTrackId = hoveredTrackId
     }
   } else if (S.drag.type === 'move-audio') {
     // Solo mover el audio (desvinculado)
@@ -628,31 +645,33 @@ document.addEventListener('mouseup', e => {
   }
   if (!S.drag) return
 
-  TRACK_IDS.forEach(tid => {
+  TRACK_IDS_COMPAT.forEach(tid => {
     const el = document.getElementById(tid)
     if (el) el.classList.remove('track-hover')
   })
+  document.querySelectorAll('.tl-track').forEach(el => el.classList.remove('track-hover'))
   document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'))
 
   if (S.drag.type === 'move') {
     const c = S.clips.find(x => x.id === S.drag.clipId)
-    if (c && S.drag.ghostTrack !== null) {
-      if (c.audioLinked === false) {
-        // Audio desvinculado: mover solo la pista de video
-        if (S.drag.ghostTrack <= 1) {
-          c.track = S.drag.ghostTrack
-        }
-      } else {
-        if (S.drag.ghostTrack <= 1) {
-          c.track      = S.drag.ghostTrack
-          c.audioTrack = S.drag.ghostTrack
-        } else {
-          c.audioTrack = S.drag.ghostTrack - 2
+    if (c && S.drag.ghostTrackId) {
+      const targetTrack = S.tracks.find(t => t.id === S.drag.ghostTrackId)
+      if (targetTrack) {
+        if (targetTrack.type === 'video') {
+          c.trackId = S.drag.ghostTrackId
+          if (c.audioLinked !== false) {
+            const videoTracks = S.tracks.filter(t => t.type === 'video')
+            const audioTracks = S.tracks.filter(t => t.type === 'audio')
+            const vIdx = videoTracks.findIndex(t => t.id === S.drag.ghostTrackId)
+            if (audioTracks[vIdx]) c.audioTrackId = audioTracks[vIdx].id
+          }
+        } else if (targetTrack.type === 'audio') {
+          c.audioTrackId = S.drag.ghostTrackId
         }
       }
     }
   } else if (S.drag.type === 'move-audio') {
-    // audioTlStart ya fue actualizado en mousemove, no hay nada más que hacer
+    // audioTlStart ya fue actualizado en mousemove
   }
 
   S.setDrag(null)
@@ -660,37 +679,24 @@ document.addEventListener('mouseup', e => {
 })
 
 function renderClipPositions() {
-  const videoTrackEls = [
-    document.getElementById('tl-video-track'),
-    document.getElementById('tl-video-track-2')
-  ].filter(Boolean)
-  const audioTrackEls = [
-    document.getElementById('tl-audio-track'),
-    document.getElementById('tl-audio-track-2')
-  ].filter(Boolean)
-
   S.clips.forEach(c => {
     const videoLeft  = c.tlStart * S.tlZoom
     const videoWidth = Math.max(c.tlDuration * S.tlZoom, 20)
-
-    // Posición y tamaño del audio: independientes si está desvinculado
     const unlinked   = c.audioLinked === false
     const audioStart = (unlinked && c.audioTlStart    !== undefined) ? c.audioTlStart    : c.tlStart
     const audioDur   = (unlinked && c.audioTlDuration !== undefined) ? c.audioTlDuration : c.tlDuration
     const audioLeft  = audioStart * S.tlZoom
     const audioWidth = Math.max(audioDur * S.tlZoom, 20)
 
-    // Actualizar elementos de video
-    videoTrackEls.forEach(track => {
-      const el = track.querySelector(`[data-id="${c.id}"]`)
-      if (el) { el.style.left = videoLeft + 'px'; el.style.width = videoWidth + 'px' }
-    })
+    // Elemento de video
+    const vTrackId = c.trackId || firstVideoTrackId()
+    const vEl = document.querySelector(`#track-${vTrackId} [data-id="${c.id}"]`)
+    if (vEl) { vEl.style.left = videoLeft + 'px'; vEl.style.width = videoWidth + 'px' }
 
-    // Actualizar elementos de audio con su tamaño independiente
-    audioTrackEls.forEach(track => {
-      const el = track.querySelector(`[data-id="${c.id}"]`)
-      if (el) { el.style.left = audioLeft + 'px'; el.style.width = audioWidth + 'px' }
-    })
+    // Elemento de audio
+    const aTrackId = c.audioTrackId || firstAudioTrackId()
+    const aEl = document.querySelector(`#track-${aTrackId} [data-id="${c.id}"]`)
+    if (aEl) { aEl.style.left = audioLeft + 'px'; aEl.style.width = audioWidth + 'px' }
   })
 }
 
@@ -778,9 +784,9 @@ export function startLibraryDrag(e, index) {
       start: 0, duration: isImg ? clipDuration : (m.duration || clipDuration),
       tlStart, tlDuration: clipDuration,
       isImage: isImg,
-      track:      isVideo ? track : 0,
-      audioTrack: isVideo ? track : track,
-      audioLinked: true,
+      trackId:      firstVideoTrackId(),
+      audioTrackId: firstAudioTrackId(),
+      track: 0, audioTrack: 0, audioLinked: true,
       props
     })
     renderTimeline()

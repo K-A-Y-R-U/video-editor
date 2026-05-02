@@ -106,7 +106,7 @@ ipcMain.handle('get-metadata', async (event, filePath) => {
   })
 })
 
-ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast, muteAudio }) => {
+ipcMain.handle('export-video', async (event, { input, output, startTime, duration, speed, brightness, contrast, muteAudio, textFilters }) => {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject('FFmpeg no encontrado.')
 
@@ -116,10 +116,15 @@ ipcMain.handle('export-video', async (event, { input, output, startTime, duratio
     args.push('-i', input)
     if (duration > 0) { args.push('-t', String(duration)) }
 
+    // Filtros de video (velocidad, color, texto)
     const vf = []
     if (speed && speed !== 1) vf.push(`setpts=${(1/speed).toFixed(4)}*PTS`)
     if (brightness || contrast) {
       vf.push(`eq=brightness=${((brightness||0)/100).toFixed(3)}:contrast=${(1+(contrast||0)/100).toFixed(3)}`)
+    }
+    // Quemar texto animado sobre el video
+    if (textFilters && textFilters.length > 0) {
+      textFilters.forEach(f => vf.push(f))
     }
     if (vf.length) { args.push('-vf', vf.join(',')) }
 

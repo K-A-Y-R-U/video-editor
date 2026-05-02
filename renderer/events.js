@@ -19,8 +19,18 @@ import {
 } from './markers.js'
 import { togglePlay, toggleMute, seekClick, initVideoEvents } from './playback.js'
 import { startExport } from './export.js'
+import { initTracks } from './timeline.js'
+import {
+  initTextOverlay, startTextRender, initTextDragOnPreview,
+  renderTextTimeline, addTextClip, deleteTextClip, selectTextClip,
+  getSelectedTextClip, showTextPanel, hideTextPanel, updateTextProp,
+  moveTextLayer, TEXT_ANIMATIONS, TEXT_PRESETS
+} from './text-clips.js'
 
 export function initEvents() {
+  // Iniciar pistas dinámicas primero
+  initTracks()
+
   // Iniciar listeners del elemento de video
   initVideoEvents()
 
@@ -268,4 +278,140 @@ export function initEvents() {
       setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 50)
     })
   }
+
+  // ── Sistema de texto animado ───────────────────────────────────────────────
+  initTextOverlay()
+  startTextRender()
+  initTextDragOnPreview()
+
+  // Poblar presets
+  const presetsGrid = document.getElementById('text-presets-grid')
+  if (presetsGrid) {
+    TEXT_PRESETS.forEach(preset => {
+      const btn = document.createElement('button')
+      btn.className = 'text-preset-btn'
+
+      const preview = document.createElement('div')
+      preview.className = 'text-preset-preview'
+      preview.textContent = preset.label
+      preview.style.cssText = [
+        `font-size:${Math.round(preset.fontSize / 3.5)}px`,
+        `font-weight:${preset.fontWeight}`,
+        `color:${preset.color}`,
+        preset.id === 'neon'    ? `text-shadow:0 0 8px ${preset.color}` : '',
+        preset.id === 'caption' ? 'background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px' : '',
+        preset.id === 'glitch'  ? `text-shadow:2px 0 #ff0044,-2px 0 #00ffcc` : '',
+      ].filter(Boolean).join(';')
+
+      const label = document.createElement('div')
+      label.style.cssText = 'font-size:9px;color:var(--text-3);margin-top:3px'
+      label.textContent   = TEXT_ANIMATIONS[preset.animation]?.label || preset.animation
+
+      btn.appendChild(preview)
+      btn.appendChild(label)
+      btn.addEventListener('click', () => addTextClip(preset))
+      presetsGrid.appendChild(btn)
+    })
+  }
+
+  // Poblar animaciones
+  const animGrid = document.getElementById('text-anim-grid')
+  if (animGrid) {
+    Object.entries(TEXT_ANIMATIONS).forEach(([key, val]) => {
+      const btn = document.createElement('button')
+      btn.className = 'tp-anim-btn'
+      btn.dataset.anim = key
+      btn.title = val.label
+      btn.innerHTML = `<div style="font-size:14px">${val.icon}</div><div>${val.label}</div>`
+      btn.addEventListener('click', () => {
+        updateTextProp('animation', key)
+        document.querySelectorAll('.tp-anim-btn').forEach(b => b.classList.toggle('on', b.dataset.anim === key))
+      })
+      animGrid.appendChild(btn)
+    })
+  }
+
+  // Botón volver a presets
+  document.getElementById('tp-back')?.addEventListener('click', () => {
+    hideTextPanel()
+  })
+
+  // Textarea del texto
+  document.getElementById('tp-text')?.addEventListener('input', e => {
+    updateTextProp('text', e.target.value)
+    const label = document.getElementById('tp-title-label')
+    if (label) label.textContent = `"${e.target.value.slice(0, 18)}${e.target.value.length > 18 ? '…' : ''}"`
+  })
+
+  // Color
+  document.getElementById('tp-color')?.addEventListener('input', e => updateTextProp('color', e.target.value))
+
+  // Tamaño de fuente
+  document.getElementById('tp-fontsize')?.addEventListener('input', e => {
+    const v = parseInt(e.target.value)
+    document.getElementById('tp-fontsize-v').textContent = v + 'px'
+    updateTextProp('fontSize', v)
+  })
+
+  // Posición X e Y con labels
+  document.getElementById('tp-x')?.addEventListener('input', e => {
+    const v = parseInt(e.target.value)
+    const lbl = document.getElementById('tp-x-v'); if (lbl) lbl.textContent = v + '%'
+    updateTextProp('x', v)
+  })
+  document.getElementById('tp-y')?.addEventListener('input', e => {
+    const v = parseInt(e.target.value)
+    const lbl = document.getElementById('tp-y-v'); if (lbl) lbl.textContent = v + '%'
+    updateTextProp('y', v)
+  })
+
+  // Negrita
+  document.getElementById('tp-bold')?.addEventListener('click', () => {
+    const btn = document.getElementById('tp-bold')
+    btn.classList.toggle('on')
+    updateTextProp('fontWeight', btn.classList.contains('on') ? '700' : '400')
+  })
+
+  // Cursiva
+  document.getElementById('tp-italic')?.addEventListener('click', () => {
+    const btn = document.getElementById('tp-italic')
+    btn.classList.toggle('on')
+    updateTextProp('fontStyle', btn.classList.contains('on') ? 'italic' : 'normal')
+  })
+
+  // Sombra
+  document.getElementById('tp-shadow')?.addEventListener('click', () => {
+    const btn = document.getElementById('tp-shadow')
+    btn.classList.toggle('on')
+    updateTextProp('shadow', btn.classList.contains('on'))
+  })
+
+  // Fondo
+  document.getElementById('tp-bg')?.addEventListener('click', () => {
+    const btn = document.getElementById('tp-bg')
+    btn.classList.toggle('on')
+    updateTextProp('bg', btn.classList.contains('on') ? 'rgba(0,0,0,0.6)' : '')
+  })
+
+  // Alineación
+  ;['l','c','r'].forEach(a => {
+    document.getElementById(`tp-align-${a}`)?.addEventListener('click', () => {
+      ;['l','c','r'].forEach(x => document.getElementById(`tp-align-${x}`)?.classList.remove('on'))
+      document.getElementById(`tp-align-${a}`)?.classList.add('on')
+      updateTextProp('align', a === 'c' ? 'center' : a === 'l' ? 'left' : 'right')
+    })
+  })
+
+  // Capas
+  document.getElementById('tp-layer-up')?.addEventListener('click', () => {
+    const tc = getSelectedTextClip(); if (tc) moveTextLayer(tc.id, 'up')
+  })
+  document.getElementById('tp-layer-down')?.addEventListener('click', () => {
+    const tc = getSelectedTextClip(); if (tc) moveTextLayer(tc.id, 'down')
+  })
+
+  // Eliminar texto
+  document.getElementById('tp-delete')?.addEventListener('click', () => {
+    const tc = getSelectedTextClip(); if (tc) deleteTextClip(tc.id)
+  })
 }

@@ -6,6 +6,8 @@ export const vid = document.getElementById('main-video')
 
 export let mediaItems = []
 export let clips      = []
+export let textClips  = []
+export let tracks     = []   // pistas dinámicas
 export let selectedClip       = null
 export let selectedAudioClip  = null   // id del clip cuyo AUDIO está seleccionado independientemente
 export let selectedMediaIndex = -1
@@ -45,6 +47,8 @@ export let folderStack      = []     // historial de navegación: [{ id, name },
 
 export function setMediaItems(v)  { mediaItems = v }
 export function setClips(v)       { clips = v }
+export function setTextClips(v)   { textClips = v }
+export function setTracks(v)      { tracks = v }
 export function setSelectedClip(v)     { selectedClip = v }
 export function setSelectedAudioClip(v){ selectedAudioClip = v }
 export function setSelectedMediaIndex(v) { selectedMediaIndex = v }
