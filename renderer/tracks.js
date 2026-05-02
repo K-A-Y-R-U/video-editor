@@ -16,8 +16,8 @@ export const TRACK_TYPES = {
 export function initDefaultTracks() {
   if (S.tracks && S.tracks.length > 0) return
   S.setTracks([
-    { id: 'track-v1', type: 'video', label: 'Video',  locked: false, muted: false, solo: false },
     { id: 'track-t1', type: 'text',  label: 'Texto',  locked: false, muted: false, solo: false },
+    { id: 'track-v1', type: 'video', label: 'Video',  locked: false, muted: false, solo: false },
     { id: 'track-a1', type: 'audio', label: 'Audio',  locked: false, muted: false, solo: false },
   ])
 }

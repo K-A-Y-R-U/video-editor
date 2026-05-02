@@ -325,6 +325,12 @@ export function initEvents() {
       btn.innerHTML = `<div style="font-size:14px">${val.icon}</div><div>${val.label}</div>`
       btn.addEventListener('click', () => {
         updateTextProp('animation', key)
+        // Ajustar duración del clip según la velocidad natural de la animación
+        const tc = getSelectedTextClip()
+        if (tc) {
+          tc.tlDuration = TEXT_ANIMATIONS[key]?.defaultDuration ?? 3
+          renderTextTimeline()
+        }
         document.querySelectorAll('.tp-anim-btn').forEach(b => b.classList.toggle('on', b.dataset.anim === key))
       })
       animGrid.appendChild(btn)
