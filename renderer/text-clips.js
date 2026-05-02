@@ -5,7 +5,6 @@
 import * as S from './state.js'
 import { setStatus } from './utils.js'
 import { saveState } from './history.js'
-import { renderTimeline } from './timeline.js'
 
 // ── Helper: obtener el elemento DOM de la pista de texto ─────────────────────
 // La pista de texto ya no tiene ID fijo "tl-text-track" — usa el ID dinámico
@@ -324,8 +323,16 @@ export function deleteTextClip(id) {
   setStatus('Texto eliminado')
 }
 
+export function deselectTextClip() {
+  selectedTextId = null
+  hideTextPanel()
+  renderTextTimeline()   // solo re-renderiza la pista de texto, sin necesitar timeline.js
+}
+
 export function selectTextClip(id) {
   selectedTextId = id
+  S.setSelectedClip(null)        // deseleccionar clip de video
+  S.setSelectedAudioClip(null)   // deseleccionar audio independiente
   const tc = S.textClips.find(t => t.id === id)
   if (tc) showTextPanel(tc)
   renderTextTimeline()

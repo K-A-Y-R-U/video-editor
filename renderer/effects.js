@@ -3,6 +3,7 @@
 
 import * as S from './state.js'
 import { fmt, defaultClipProps, setStatus } from './utils.js'
+import { renderTimeline } from './timeline.js'
 
 // ── Aplicar estilos al preview ────────────────────────────────────────────────
 
@@ -129,6 +130,16 @@ export function updateSpeed(v) {
   S.vid.playbackRate = v / 100
   document.getElementById('speed-v').textContent = (v / 100).toFixed(2) + '×'
   savePropsFromUI()
+
+  // Recalcular tlDuration en tiempo real → la barra del timeline se ajusta
+  const c = S.clips.find(x => x.id === S.selectedClip)
+  if (c && c.duration) {
+    const speed     = (v / 100) || 1
+    const trimStart = c.props?.trimStart || 0
+    const trimEnd   = c.props?.trimEnd   || c.duration
+    c.tlDuration    = Math.max(0.1, (trimEnd - trimStart) / speed)
+    renderTimeline()
+  }
 }
 
 /** Establece la velocidad y actualiza el slider */

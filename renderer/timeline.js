@@ -10,7 +10,7 @@ import { openTransitionPanel } from './transitions.js'
 import { loadMedia, renderMediaPanel, updateTimeDisplay, setupTrimSliders } from './media.js'
 import { loadPropsToUI, applyVideoStyle } from './effects.js'
 import { initDefaultTracks, renderTracks, getTrackIdAtY } from './tracks.js'
-import { renderTextTimeline } from './text-clips.js'
+import { renderTextTimeline, deselectTextClip } from './text-clips.js'
 
 const TRACK_IDS_COMPAT = ['tl-video-track', 'tl-video-track-2', 'tl-audio-track', 'tl-audio-track-2']
 
@@ -227,6 +227,7 @@ export function renderTimeline() {
 export function selectClip(id) {
   S.setSelectedClip(id)
   S.setSelectedAudioClip(null)   // limpiar selección de audio independiente
+  deselectTextClip()             // deseleccionar clip de texto
   const c = S.clips.find(x => x.id === id)
   if (!c) return
   if (!c.props) c.props = defaultClipProps()
