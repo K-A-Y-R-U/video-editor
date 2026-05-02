@@ -713,6 +713,14 @@ export function startLibraryDrag(e, index) {
   const startX = e.clientX
   const startY = e.clientY
 
+  // Construir lista de pistas drop-target desde S.tracks dinámicamente
+  // (reemplaza el antiguo array LIB_TRACKS hardcodeado)
+  function getDropTracks() {
+    return S.tracks
+      .filter(t => t.type === 'video' || t.type === 'audio')
+      .map(t => ({ id: `track-${t.id}`, trackId: t.id, type: t.type }))
+  }
+
   function onMove(ev) {
     const dx = ev.clientX - startX
     const dy = ev.clientY - startY
@@ -729,8 +737,9 @@ export function startLibraryDrag(e, index) {
     libDragGhost.style.left = ev.clientX + 14 + 'px'
     libDragGhost.style.top  = ev.clientY - 14 + 'px'
 
+    const dropTracks = getDropTracks()
     let found = null
-    for (const t of LIB_TRACKS) {
+    for (const t of dropTracks) {
       const el = document.getElementById(t.id)
       if (!el) continue
       const r = el.getBoundingClientRect()
@@ -738,7 +747,7 @@ export function startLibraryDrag(e, index) {
           ev.clientX >= r.left && ev.clientX <= r.right) { found = t; break }
     }
 
-    LIB_TRACKS.forEach(t => {
+    dropTracks.forEach(t => {
       const el = document.getElementById(t.id)
       if (el) el.classList.toggle('track-drop-target', found && found.id === t.id)
     })
@@ -750,14 +759,15 @@ export function startLibraryDrag(e, index) {
     document.removeEventListener('mouseup', onUp)
 
     if (libDragGhost) { libDragGhost.remove(); libDragGhost = null }
-    LIB_TRACKS.forEach(t => {
+    getDropTracks().forEach(t => {
       const el = document.getElementById(t.id)
       if (el) el.classList.remove('track-drop-target')
     })
 
     if (!libDragActive || !libDragHoverTrack) return
 
-    const { isVideo, track } = libDragHoverTrack
+    const droppedTrackId = libDragHoverTrack.trackId
+    const droppedType    = libDragHoverTrack.type   // 'video' | 'audio'
     const trackEl  = document.getElementById(libDragHoverTrack.id)
     const scrollEl = document.getElementById('tl-scroll')
     const rect     = trackEl.getBoundingClientRect()
@@ -767,9 +777,10 @@ export function startLibraryDrag(e, index) {
     const isImg        = m.isImage || false
     const clipDuration = isImg ? 5 : (m.duration || 10)
 
-    const trackClips = S.clips.filter(c => isVideo
-      ? (c.track      || 0) === track
-      : (c.audioTrack || 0) === track)
+    // Evitar superposición con clips existentes en la pista destino
+    const trackClips = S.clips.filter(c =>
+      droppedType === 'video' ? c.trackId === droppedTrackId : c.audioTrackId === droppedTrackId
+    )
     for (const c of trackClips) {
       if (tlStart < c.tlStart + c.tlDuration && tlStart + clipDuration > c.tlStart)
         tlStart = c.tlStart + c.tlDuration
@@ -779,13 +790,17 @@ export function startLibraryDrag(e, index) {
     const props   = defaultClipProps()
     props.trimEnd = clipDuration
 
+    // Asignar a la pista correcta según dónde se soltó
+    const videoTrackId = droppedType === 'video' ? droppedTrackId : firstVideoTrackId()
+    const audioTrackId = droppedType === 'audio' ? droppedTrackId : firstAudioTrackId()
+
     S.clips.push({
       id: Date.now(), path: m.path, name: m.name,
       start: 0, duration: isImg ? clipDuration : (m.duration || clipDuration),
       tlStart, tlDuration: clipDuration,
       isImage: isImg,
-      trackId:      firstVideoTrackId(),
-      audioTrackId: firstAudioTrackId(),
+      trackId:      videoTrackId,
+      audioTrackId: audioTrackId,
       track: 0, audioTrack: 0, audioLinked: true,
       props
     })
